@@ -1,5 +1,6 @@
 debug
 target
+*.db3
 
 **/*.rs.bk
 *.pdb
