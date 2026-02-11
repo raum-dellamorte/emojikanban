@@ -1,5 +1,11 @@
 use {
   crate::effects::*,
+  image::{
+    AnimationDecoder,
+    DynamicImage,
+    ImageFormat,
+    codecs::gif::GifDecoder,
+  },
   obs_wrapper::{
     graphics::*,
     obs_string, 
@@ -184,22 +190,26 @@ impl VideoTickSource for EmojiKanBan {
     let h = data.screen_h as f32;
     while let Ok(emote_data) = data.rx.try_recv() {
       if (data.emote_queue.len() as u32) < data.emote_queue_max_length {
-        let mut emote_obs: EmoteOBS = emote_data.into();
-        let (ew, eh) = (emote_obs.tex.width() as f32, emote_obs.tex.height() as f32);
-        emote_obs.effect = Some(GravityEffect::init(
+        let mut emote: EmoteOBS = emote_data.into();
+        if emote.tex_vec.is_empty() || emote.frame >= emote.tex_vec.len() {
+          log::error!("tex_vec empty or current frame out of bounds: len: {} frame: {}", emote.tex_vec.len(), emote.frame);
+          continue;
+        }
+        let (ew, eh) = (emote.tex_vec[emote.frame].width() as f32, emote.tex_vec[emote.frame].height() as f32);
+        emote.effect = Some(GravityEffect::init(
           w,h,ew,eh,
           GRAVITY, BOUNCE,
           &mut data.rng,
         ));
-        emote_obs.life_total = data.rng.random_range(2.0..5.0);
-        data.emote_queue.push_back(emote_obs);
+        emote.life_total = data.rng.random_range(2.0..5.0);
+        data.emote_queue.push_back(emote);
       } else {
         let _ = emote_data;
       }
     }
     // Animate emotes in queue
     for emote in data.emote_queue.iter_mut() {
-      emote.life_lived += seconds;
+      emote.update(seconds);
       if let Some(effect) = emote.effect.as_mut() {
         effect.update(seconds);
       }
@@ -220,10 +230,14 @@ impl VideoRenderSource for EmojiKanBan {
       }
       obs_enter_graphics();
       for emote in self.emote_queue.iter_mut() {
+        if emote.tex_vec.is_empty() || emote.frame >= emote.tex_vec.len() {
+          log::error!("tex_vec empty or current frame out of bounds: len: {} frame: {}", emote.tex_vec.len(), emote.frame);
+          continue;
+        }
         if let Some(effect) = emote.effect.as_ref() {
           let x = effect.pos().x as i32;
           let y = effect.pos().y as i32;
-          emote.tex.draw(x, y, 0, 0, false);
+          emote.tex_vec[emote.frame].draw(x, y, 0, 0, false);
         }
       }
       obs_leave_graphics();
@@ -240,7 +254,10 @@ pub struct EmoteData {
 
 pub struct EmoteOBS {
   pub name: String,
-  pub tex: GraphicsTexture,
+  pub tex_vec: Vec<GraphicsTexture>, // Make this a Vec<GraphicsTexture> to support animation
+  pub delay: Vec<f32>,
+  pub frame: usize,
+  pub frame_time: f32,
   pub life_total: f32,
   pub life_lived: f32,
   pub effect: Option<Box<dyn EmoteEffect>>,
@@ -248,23 +265,74 @@ pub struct EmoteOBS {
 
 impl EmoteOBS {
   pub fn is_alive(&self) -> bool { self.life_lived < self.life_total }
+  pub fn update(&mut self, seconds: f32) {
+    self.life_lived += seconds;
+    if self.tex_vec.len() < 2 { return; }
+    self.frame_time += seconds;
+    if self.frame_time > self.delay[self.frame] {
+      self.frame_time = 0.;
+      self.frame = (self.frame + 1) % self.tex_vec.len();
+    }
+  }
 }
 
-impl From<EmoteData> for EmoteOBS {
+impl From<EmoteData> for EmoteOBS { // This approach is fun but doesn't allow for error handling outside of log::error!()
   fn from(value: EmoteData) -> Self {
-    let tex = if let Ok(img) = image::load_from_memory(&value.img) {
-      let mut tex = GraphicsTexture::new(
-        img.width(), img.height(), 
-        GraphicsColorFormat::RGBA,
-      );
-      let linesize = img.width() * 4; // pixels wide * 4 bytes per pixel for RGBA
-      let pixels = img.into_rgba8().into_raw();
-      tex.set_image(&pixels, linesize, false);
-      tex
-    } else { unreachable!() };
+    let mut tex_vec: Vec<GraphicsTexture> = vec![];
+    let mut delay: Vec<f32> = vec![];
+    match image::guess_format(&value.img) {
+      Err(e) => { log::error!("Failed to guess_format of image data: {}", e) }
+      Ok(ImageFormat::Gif) => {
+        let cursor = std::io::Cursor::new(&value.img);
+        let gifdec_result = GifDecoder::new(cursor);
+        if let Ok(gif) = gifdec_result {
+          let frames = gif.into_frames();
+          for frame_result in frames.into_iter() {
+            let mut width = 0;
+            let mut height = 0;
+            let mut linesize = 0;
+            match frame_result {
+              Err(e) => { log::error!("Failed to decode GIF from image data: {}", e); }
+              Ok(frame) => {
+                let (ms,_) = frame.delay().numer_denom_ms();
+                let d = (ms as f32) / 1000.;
+                let img = DynamicImage::ImageRgba8(frame.into_buffer());
+                if width == 0 {
+                  (width, height) = (img.width(), img.height());
+                  linesize = width * 4;
+                }
+                let mut texture = GraphicsTexture::new(
+                  width, height, 
+                  GraphicsColorFormat::RGBA,
+                );
+                let pixels = img.into_rgba8().into_raw();
+                texture.set_image(&pixels, linesize, false);
+                tex_vec.push(texture);
+                delay.push(d);
+              }
+            }
+          }
+        }
+      }
+      Ok(_) => {
+        if let Ok(img) = image::load_from_memory(&value.img) {
+          let mut texture = GraphicsTexture::new(
+            img.width(), img.height(), 
+            GraphicsColorFormat::RGBA,
+          );
+          let linesize = img.width() * 4; // pixels wide * 4 bytes per pixel for RGBA
+          let pixels = img.into_rgba8().into_raw();
+          texture.set_image(&pixels, linesize, false);
+          tex_vec.push(texture);
+        };
+      }
+    }
     Self{
       name: value.name,
-      tex,
+      tex_vec,
+      delay,
+      frame: 0,
+      frame_time: 0.,
       life_total: 0.,
       life_lived: 0.,
       effect: None,

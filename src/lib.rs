@@ -103,8 +103,9 @@ pub async fn run(tx: UnboundedSender<EmoteData>) -> Result<(), anyhow::Error> {
     let msg: TwitchMsg<'_> = result.message;
     if let MessageKind::Privmsg = msg.kind && let Some(pm) = msg.as_typed_message::<Privmsg>() {
       for emote in pm.emotes() {
-        let uri = format!("https://static-cdn.jtvnw.net/emoticons/v1/{}/3.0", emote.id);
-        println!("Emote URI: {}", uri);
+        let uri_v1 = format!("https://static-cdn.jtvnw.net/emoticons/v1/{}/3.0", emote.id);
+        let uri_v2 = format!("https://static-cdn.jtvnw.net/emoticons/v2/{}/default/light/3.0", emote.id);
+        // println!("Emote URI: {}", uri_v1);
         let emote_data: EmoteData = if let Ok(emote_data) = emotes.query_one(
           "SELECT id, name, img FROM emotes WHERE id=?1", params![emote.id.to_string()], |row| {
             Ok(EmoteData{
@@ -118,7 +119,9 @@ pub async fn run(tx: UnboundedSender<EmoteData>) -> Result<(), anyhow::Error> {
           emote_data
         } else {
           log::info!("Could not find id {} in DB, downloading image to DB...", emote.id);
-          let img_data = if let Ok(data) = reqwest::get(uri).await { data } else {
+          let img_data = if let Ok(data) = reqwest::get(uri_v2).await {
+            data 
+          } else if let Ok(data) = reqwest::get(uri_v1).await { data } else {
             log::error!("Failed to download image data for emote id {} at step 1", emote.id);
             continue;
           };
@@ -132,7 +135,7 @@ pub async fn run(tx: UnboundedSender<EmoteData>) -> Result<(), anyhow::Error> {
           }
           let emote_data = EmoteData{
             id: emote.id.to_string(),
-            name: emote.name.into_owned(),
+            name: emote.name.into_owned(), // FixMe: this sometimes ends up with several names, probably when multiple emotes are used in the same chat
             img: img_bytes.into(),
           };
           if let Err(e) = emotes.execute(
