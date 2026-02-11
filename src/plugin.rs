@@ -12,7 +12,7 @@ use {
     },
     prelude::*, 
     properties::*, 
-    source::*, 
+    source::*,
   }, 
   rand::prelude::*, 
   std::collections::VecDeque,
@@ -28,6 +28,7 @@ pub struct EmojiKanBan {
   runtime: Runtime,
   rx: UnboundedReceiver<EmoteData>, 
   emote_queue: VecDeque<EmoteOBS>,
+  emote_queue_max_length: u32,
   rng: ThreadRng,
   padding: f64,
   opacity: u32,
@@ -58,6 +59,7 @@ impl Sourceable for EmojiKanBan {
     let screen_h = settings.get(obs_string!("screen_height")).unwrap_or(1080);
     let screen_x = settings.get(obs_string!("screen_x")).unwrap_or(0);
     let screen_y = settings.get(obs_string!("screen_y")).unwrap_or(0);
+    let emote_queue_max_length = settings.get(obs_string!("emotes_max")).unwrap_or(200);
     
     source.update_source_settings(settings);
     
@@ -66,6 +68,7 @@ impl Sourceable for EmojiKanBan {
       runtime,
       rx,
       emote_queue: vec![].into(),
+      emote_queue_max_length,
       rng: rand::rng(),
       padding: 0.1,
       opacity: 255,
@@ -110,6 +113,13 @@ impl GetPropertiesSource for EmojiKanBan {
           .with_slider(),
       )
       .add(
+        obs_string!("emotes_max"), 
+        obs_string!("Cap the number of emotes to draw."), 
+        NumberProp::new_int()
+          .with_range(0..=1000)
+          .with_slider(),
+      )
+      .add(
         obs_string!("screen_x"),
         obs_string!("Offset relative to top left screen - x"),
         NumberProp::new_int().with_range(1u32..=3840 * 3),
@@ -135,11 +145,6 @@ impl GetPropertiesSource for EmojiKanBan {
         obs_string!("screen_height"),
         obs_string!("Screen height"),
         NumberProp::new_int().with_range(1u32..=3840 * 3),
-      )
-      .add(
-        obs_string!("animation_time"),
-        obs_string!("Animation Time (s)"),
-        NumberProp::new_float(0.001).with_range(0.3..=10.),
       );
     props
   }
@@ -150,6 +155,9 @@ impl UpdateSource for EmojiKanBan {
     let data = self;
     if let Some(opacity) = settings.get(obs_string!("opacity")) {
       data.opacity = opacity;
+    }
+    if let Some(emotes_max) = settings.get(obs_string!("emotes_max")) {
+      data.emote_queue_max_length = emotes_max;
     }
     if let Some(screen_width) = settings.get(obs_string!("screen_width")) {
       data.screen_w = screen_width;
@@ -175,7 +183,7 @@ impl VideoTickSource for EmojiKanBan {
     let w = data.screen_w as f32;
     let h = data.screen_h as f32;
     while let Ok(emote_data) = data.rx.try_recv() {
-      if data.emote_queue.len() < 100 {
+      if (data.emote_queue.len() as u32) < data.emote_queue_max_length {
         let mut emote_obs: EmoteOBS = emote_data.into();
         let (ew, eh) = (emote_obs.tex.width() as f32, emote_obs.tex.height() as f32);
         emote_obs.effect = Some(GravityEffect::init(
