@@ -1,4 +1,5 @@
 use {
+  crate::effects::*,
   obs_wrapper::{
     graphics::*,
     obs_string, 
@@ -171,47 +172,28 @@ impl UpdateSource for EmojiKanBan {
 impl VideoTickSource for EmojiKanBan {
   fn video_tick(&mut self, seconds: f32) {
     let data: &mut EmojiKanBan = self;
+    let w = data.screen_w as f32;
+    let h = data.screen_h as f32;
     while let Ok(emote_data) = data.rx.try_recv() {
       if data.emote_queue.len() < 100 {
         let mut emote_obs: EmoteOBS = emote_data.into();
-        let x = data.rng.random_range(0.1..0.9) as f32;
-        let vx = data.rng.random_range(-0.15..0.15);
+        let (ew, eh) = (emote_obs.tex.width() as f32, emote_obs.tex.height() as f32);
+        emote_obs.effect = Some(GravityEffect::init(
+          w,h,ew,eh,
+          GRAVITY, BOUNCE,
+          &mut data.rng,
+        ));
         emote_obs.life_total = data.rng.random_range(2.0..5.0);
-        emote_obs.pos.set(x, 0., 0.);
-        emote_obs.vel.set(vx, 0., 0.);
         data.emote_queue.push_back(emote_obs);
       } else {
         let _ = emote_data;
       }
     }
     // Animate emotes in queue
-    let w = data.screen_w as f32;
-    let h = data.screen_h as f32;
-    let g = GRAVITY / h;
     for emote in data.emote_queue.iter_mut() {
       emote.life_lived += seconds;
-      let mut x = emote.pos.x();
-      let mut y = emote.pos.y();
-      let ew = emote.tex.width() as f32 / w;
-      let eh = emote.tex.height() as f32 / h;
-      // Update velocity
-      let mut vy = emote.vel.y();
-      vy += g * seconds;
-      let vx = emote.vel.x();
-      emote.vel.set(vx, vy, 0.);
-      // Apply velocity
-      x += vx * seconds;
-      y += vy * seconds;
-      emote.pos.set(x, y, 0.);
-      
-      // Bounce
-      let floor: f32 = 1.0 - eh;
-      if y > floor {
-        emote.pos.set(x, floor, 0.);
-        emote.vel.set(vx, -vy * BOUNCE, 0.);
-      }
-      if x < 0. || x >= 1.0 - ew {
-        emote.vel.set(-vx, vy, 0.);
+      if let Some(effect) = emote.effect.as_mut() {
+        effect.update(seconds);
       }
     }
     // Keep only the living
@@ -230,9 +212,11 @@ impl VideoRenderSource for EmojiKanBan {
       }
       obs_enter_graphics();
       for emote in self.emote_queue.iter_mut() {
-        let x = (emote.pos.x() * 1920.) as i32;
-        let y = (emote.pos.y() * 1080.) as i32;
-        emote.tex.draw(x, y, 0, 0, false);
+        if let Some(effect) = emote.effect.as_ref() {
+          let x = effect.pos().x as i32;
+          let y = effect.pos().y as i32;
+          emote.tex.draw(x, y, 0, 0, false);
+        }
       }
       obs_leave_graphics();
     }
@@ -251,9 +235,7 @@ pub struct EmoteOBS {
   pub tex: GraphicsTexture,
   pub life_total: f32,
   pub life_lived: f32,
-  pub pos: Vec3,
-  pub vel: Vec3,
-  pub scale: Vec3,
+  pub effect: Option<Box<dyn EmoteEffect>>,
 }
 
 impl EmoteOBS {
@@ -277,9 +259,7 @@ impl From<EmoteData> for EmoteOBS {
       tex,
       life_total: 0.,
       life_lived: 0.,
-      pos: Vec3::default(),
-      vel: Vec3::default(),
-      scale: Vec3::default(),
+      effect: None,
     }
   }
 }
