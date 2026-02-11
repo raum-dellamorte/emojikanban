@@ -1,6 +1,7 @@
 use {
   crate::{
     confparse::*,
+    // effects::*,
     plugin::{
       *,
     },
@@ -41,6 +42,7 @@ use {
 };
 
 mod confparse;
+pub mod effects;
 pub mod plugin;
 
 struct EKBModule {

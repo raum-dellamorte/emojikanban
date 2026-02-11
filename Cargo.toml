@@ -16,6 +16,7 @@ crate-type = ["cdylib", "lib"]
 anyhow = "1.0.100"
 env_logger = "0.11.8"
 futures = "0.3.31"
+glam = "0.31.0"
 home = "0.5.12"
 image = "0.25.9"
 irc = "1.1.0"
