@@ -5,12 +5,14 @@ use {
       // vec2,
     },
   },
+  obs_wrapper::graphics::*,
   rand::prelude::*, 
 };
 
 pub trait EmoteEffect {
   fn update_dimensions(&mut self, w: f32, h: f32);
   fn update(&mut self, seconds: f32);
+  fn draw(&self, tex: &GraphicsTexture);
   fn pos(&self) -> &Vec2;
   fn pos_mut(&mut self) -> &mut Vec2;
   fn vel(&self) -> &Vec2;
@@ -76,6 +78,9 @@ impl EmoteEffect for GravityEffect {
     if *x < 0. || *x >= w - ew {
       *vx = -*vx;
     }
+  }
+  fn draw(&self, tex: &GraphicsTexture) {
+    tex.draw(self.pos.x as i32, self.pos.y as i32, 0, 0, false);
   }
   fn pos(&self) -> &Vec2 {
     &self.pos

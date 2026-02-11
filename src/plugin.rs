@@ -230,14 +230,14 @@ impl VideoRenderSource for EmojiKanBan {
       }
       obs_enter_graphics();
       for emote in self.emote_queue.iter_mut() {
-        if emote.tex_vec.is_empty() || emote.frame >= emote.tex_vec.len() {
-          log::error!("tex_vec empty or current frame out of bounds: len: {} frame: {}", emote.tex_vec.len(), emote.frame);
-          continue;
-        }
+        // if emote.tex_vec.is_empty() || emote.frame >= emote.tex_vec.len() {
+        //   // tex_vec being empty should not be possible at this point as it wouldn't have been added to the queue
+        //   // frame being out bounds should not be possible because that's checked on increment
+        //   log::error!("tex_vec empty or current frame out of bounds: len: {} frame: {}", emote.tex_vec.len(), emote.frame);
+        //   continue;
+        // }
         if let Some(effect) = emote.effect.as_ref() {
-          let x = effect.pos().x as i32;
-          let y = effect.pos().y as i32;
-          emote.tex_vec[emote.frame].draw(x, y, 0, 0, false);
+          effect.draw(emote.current_frame());
         }
       }
       obs_leave_graphics();
@@ -254,9 +254,9 @@ pub struct EmoteData {
 
 pub struct EmoteOBS {
   pub name: String,
-  pub tex_vec: Vec<GraphicsTexture>, // Make this a Vec<GraphicsTexture> to support animation
-  pub delay: Vec<f32>,
-  pub frame: usize,
+  tex_vec: Vec<GraphicsTexture>, // Make this a Vec<GraphicsTexture> to support animation
+  delay: Vec<f32>,
+  frame: usize,
   pub frame_time: f32,
   pub life_total: f32,
   pub life_lived: f32,
@@ -265,6 +265,12 @@ pub struct EmoteOBS {
 
 impl EmoteOBS {
   pub fn is_alive(&self) -> bool { self.life_lived < self.life_total }
+  pub fn current_frame(&self) -> &GraphicsTexture {
+    &self.tex_vec[self.frame]
+  }
+  pub fn current_delay(&self) -> f32 {
+    self.delay[self.frame]
+  }
   pub fn update(&mut self, seconds: f32) {
     self.life_lived += seconds;
     if self.tex_vec.len() < 2 { return; }
