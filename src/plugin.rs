@@ -196,12 +196,23 @@ impl VideoTickSource for EmojiKanBan {
           continue;
         }
         let (ew, eh) = (emote.tex_vec[emote.frame].width() as f32, emote.tex_vec[emote.frame].height() as f32);
-        emote.effect = Some(GravityEffect::init(
-          w,h,ew,eh,
-          GRAVITY, BOUNCE,
-          &mut data.rng,
-        ));
-        emote.life_total = data.rng.random_range(2.0..5.0);
+        let picker = data.rng.random_range(1..=100);
+        emote.effect = Some(match picker {
+          1..=10 => {
+            SlideUpEffect::init(
+              w,h,ew,eh,
+              &mut data.rng,
+            )
+          }
+          11..=100 => {
+            GravityEffect::init(
+              w,h,ew,eh,
+              GRAVITY, BOUNCE,
+              &mut data.rng,
+            )
+          }
+          _ => { unreachable!() }
+        });
         data.emote_queue.push_back(emote);
       } else {
         let _ = emote_data;
@@ -210,9 +221,6 @@ impl VideoTickSource for EmojiKanBan {
     // Animate emotes in queue
     for emote in data.emote_queue.iter_mut() {
       emote.update(seconds);
-      if let Some(effect) = emote.effect.as_mut() {
-        effect.update(seconds);
-      }
     }
     // Keep only the living
     data.emote_queue.retain(|emote| emote.is_alive() );
@@ -258,13 +266,18 @@ pub struct EmoteOBS {
   delay: Vec<f32>,
   frame: usize,
   pub frame_time: f32,
-  pub life_total: f32,
-  pub life_lived: f32,
   pub effect: Option<Box<dyn EmoteEffect>>,
 }
 
 impl EmoteOBS {
-  pub fn is_alive(&self) -> bool { self.life_lived < self.life_total }
+  pub fn is_alive(&self) -> bool {
+    match self.effect.as_ref() {
+      None => { false }
+      Some(effect) => {
+        effect.is_alive()
+      }
+    }
+  }
   pub fn current_frame(&self) -> &GraphicsTexture {
     &self.tex_vec[self.frame]
   }
@@ -272,7 +285,9 @@ impl EmoteOBS {
     self.delay[self.frame]
   }
   pub fn update(&mut self, seconds: f32) {
-    self.life_lived += seconds;
+    if let Some(effect) = self.effect.as_mut() {
+      effect.update(seconds);
+    }
     if self.tex_vec.len() < 2 { return; }
     self.frame_time += seconds;
     if self.frame_time > self.delay[self.frame] {
@@ -339,8 +354,6 @@ impl From<EmoteData> for EmoteOBS { // This approach is fun but doesn't allow fo
       delay,
       frame: 0,
       frame_time: 0.,
-      life_total: 0.,
-      life_lived: 0.,
       effect: None,
     }
   }
