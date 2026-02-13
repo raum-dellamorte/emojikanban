@@ -19,14 +19,6 @@ pub trait EmoteEffect {
   fn update(&mut self, seconds: f32);
   fn draw(&self, tex: &GraphicsTexture);
   fn is_alive(&self) -> bool;
-  // fn life_total(&self) -> f32;
-  // fn life_lived(&self) -> f32;
-  // fn pos(&self) -> &Vec2;
-  // fn pos_mut(&mut self) -> &mut Vec2;
-  // fn vel(&self) -> &Vec2;
-  // fn vel_mut(&mut self) -> &mut Vec2;
-  // fn scl(&self) -> &Vec2;
-  // fn scl_mut(&mut self) -> &mut Vec2;
 }
 
 pub struct GravityEffect {
@@ -97,30 +89,6 @@ impl EmoteEffect for GravityEffect {
     tex.draw(self.pos.x as i32, self.pos.y as i32, 0, 0, false);
   }
   fn is_alive(&self) -> bool { self.life_lived < self.life_total }
-  // fn life_total(&self) -> f32 {
-  //   self.life_total
-  // }
-  // fn life_lived(&self) -> f32 {
-  //   self.life_lived
-  // }
-  // fn pos(&self) -> &Vec2 {
-  //   &self.pos
-  // }
-  // fn pos_mut(&mut self) -> &mut Vec2 {
-  //   &mut self.pos
-  // }
-  // fn vel(&self) -> &Vec2 {
-  //   &self.vel
-  // }
-  // fn vel_mut(&mut self) -> &mut Vec2 {
-  //   &mut self.vel
-  // }
-  // fn scl(&self) -> &Vec2 {
-  //   &self.scl
-  // }
-  // fn scl_mut(&mut self) -> &mut Vec2 {
-  //   &mut self.scl
-  // }
 }
 
 pub struct SlideUpEffect {
@@ -190,28 +158,4 @@ impl EmoteEffect for SlideUpEffect {
   fn is_alive(&self) -> bool {
     self.is_alive
   }
-  // fn life_total(&self) -> f32 {
-  //   self.life_total
-  // }
-  // fn life_lived(&self) -> f32 {
-  //   self.life_lived
-  // }
-  // fn pos(&self) -> &Vec2 {
-  //   &self.pos
-  // }
-  // fn pos_mut(&mut self) -> &mut Vec2 {
-  //   &mut self.pos
-  // }
-  // fn vel(&self) -> &Vec2 {
-  //   &self.vel
-  // }
-  // fn vel_mut(&mut self) -> &mut Vec2 {
-  //   &mut self.vel
-  // }
-  // fn scl(&self) -> &Vec2 {
-  //   &self.scl
-  // }
-  // fn scl_mut(&mut self) -> &mut Vec2 {
-  //   &mut self.scl
-  // }
 }

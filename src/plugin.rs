@@ -238,12 +238,6 @@ impl VideoRenderSource for EmojiKanBan {
       }
       obs_enter_graphics();
       for emote in self.emote_queue.iter_mut() {
-        // if emote.tex_vec.is_empty() || emote.frame >= emote.tex_vec.len() {
-        //   // tex_vec being empty should not be possible at this point as it wouldn't have been added to the queue
-        //   // frame being out bounds should not be possible because that's checked on increment
-        //   log::error!("tex_vec empty or current frame out of bounds: len: {} frame: {}", emote.tex_vec.len(), emote.frame);
-        //   continue;
-        // }
         if let Some(effect) = emote.effect.as_ref() {
           effect.draw(emote.current_frame());
         }
