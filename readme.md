@@ -4,6 +4,8 @@
 OBS plugin Emote Wall 
 ---------------------
 
+![emojikanban demo](emojikanban_demo.gif)
+
 A local emote wall written in Rust as an OBS Plugin. No HTML, No JavaScript, No Meta Cookies. The only external reliance is on Twitch.tv (not that I've read the code of any of the libraries propping this creation up). A step towards self hosting whatever possible on open source software.
 
 Plugin gives new Source `emojikanban` which connects to Twitch via IRC and monitors chat for emotes to be drawn with some effect to the screen. It tries to mak an effect with any emote used in chat (unless it's a single emote by itself for some reason). The maximum number of simultaneous emotes can be set in `Properties`. If the queue is at the limit, further emotes are ignored/skipped until there's room in the queue again.
