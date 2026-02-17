@@ -9,7 +9,8 @@ A local emote wall written in Rust as an OBS Plugin. No HTML, No JavaScript, No 
 Plugin gives new Source `emojikanban` which connects to Twitch via IRC and monitors chat for emotes to be drawn with some effect to the screen. It tries to mak an effect with any emote used in chat (unless it's a single emote by itself for some reason). The maximum number of simultaneous emotes can be set in `Properties`. If the queue is at the limit, further emotes are ignored/skipped until there's room in the queue again.
 
 There are currently two effects.
-- Gravity: 90% : Emote spawns at the top of the screen, falls, and bounces with a life between 2 and 5 seconds.
+- Gravity: 70% : Emote spawns at the top of the screen, falls, and bounces with a life between 2 and 5 seconds.
+- InchWorm: 20% : Emote spawns at the center as 9 segments that move in a random direction in an inchworm inspired fashion till offscreen.
 - SlideUp: 10% : Emote is scaled up to 512x, slides up from the bottom of the screen, pauses, and slides back down using smootherstep.
 
 

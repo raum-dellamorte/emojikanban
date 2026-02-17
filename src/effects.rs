@@ -11,7 +11,14 @@ use {
     },
   },
   obs_wrapper::graphics::*,
-  rand::prelude::*, 
+  rand::{
+    // Rng,
+    prelude::*,
+  }, 
+  rand_distr::{
+    Distribution,
+    UnitCircle,
+  },
 };
 
 pub trait EmoteEffect {
@@ -44,10 +51,8 @@ impl GravityEffect {
     vel.x = rng.random_range(-0.15..0.15) * screen_w;
     let life_total = rng.random_range(2.0..5.0);
     Box::new(Self {
-      screen_w,
-      screen_h,
-      emote_w,
-      emote_h,
+      screen_w, screen_h,
+      emote_w, emote_h,
       life_total,
       life_lived: 0.,
       g: gravity,
@@ -110,10 +115,8 @@ impl SlideUpEffect {
     let scl = Vec2::from_array([512. / emote_w, 512. / emote_w]);
     pos.x = rng.random_range(0.15..=0.75) as f32 * screen_w;
     Box::new(Self {
-      screen_w,
-      screen_h,
-      emote_w,
-      emote_h,
+      screen_w, screen_h,
+      emote_w, emote_h,
       is_alive: true,
       up_pause_down: [3.,2.,3.],
       frame_time: 0.,
@@ -121,6 +124,8 @@ impl SlideUpEffect {
       pos, scl,
     })
   }
+  fn x_scale(&self) -> u32 { (self.emote_w * self.scl.x) as u32 }
+  fn y_scale(&self) -> u32 { (self.emote_h * self.scl.y) as u32 }
 }
 
 impl EmoteEffect for SlideUpEffect {
@@ -153,9 +158,110 @@ impl EmoteEffect for SlideUpEffect {
     }
   }
   fn draw(&self, tex: &GraphicsTexture) {
-    tex.draw(self.pos.x as i32, self.pos.y as i32, (self.emote_w * self.scl.x) as u32, (self.emote_h * self.scl.y) as u32, false);
+    tex.draw(self.pos.x as i32, self.pos.y as i32, self.x_scale(), self.y_scale(), false);
   }
   fn is_alive(&self) -> bool {
     self.is_alive
   }
 }
+
+pub struct InchWormEffect {
+  screen_w: f32,
+  screen_h: f32,
+  emote_w: f32,
+  emote_h: f32,
+  is_alive: bool,
+  segments: [Vec2; 9],
+  target: Vec2,
+  // direction: Vec2,
+  step: Vec2,
+  scl: Vec2,
+  frame_time: f32,
+  step_time: f32,
+  life_counter: usize,
+  move_head: bool,
+}
+
+impl InchWormEffect {
+  pub fn init(screen_w: f32, screen_h: f32, emote_w: f32, emote_h: f32, rng: &mut ThreadRng) -> Box<dyn EmoteEffect + 'static> {
+    let unit_dir: [f32; 2] = UnitCircle.sample(rng);
+    let direction = Vec2::from_array(unit_dir);
+    let step = direction * (56. * 9.);
+    let target = step;
+    let scl = Vec2::from_array([128. / emote_w, 128. / emote_w]);
+    Box::new(Self {
+      screen_w, screen_h,
+      emote_w, emote_h,
+      is_alive: true,
+      segments: [Vec2::default(); 9],
+      target,
+      // direction,
+      step,
+      scl,
+      frame_time: 0.,
+      life_counter: 0,
+      step_time: 1.0,
+      move_head: true,
+    })
+  }
+  fn x_scale(&self) -> u32 { (self.emote_w * self.scl.x) as u32 }
+  fn y_scale(&self) -> u32 { (self.emote_h * self.scl.y) as u32 }
+  fn seg_tail(&self) -> &Vec2 {
+    &self.segments[0]
+  }
+  fn seg_head(&self) -> &Vec2 {
+    &self.segments[self.segments.len() - 1]
+  }
+  fn seg_tail_mut(&mut self) -> &mut Vec2 {
+    &mut self.segments[0]
+  }
+  fn seg_head_mut(&mut self) -> &mut Vec2 {
+    &mut self.segments[self.segments.len() - 1]
+  }
+}
+
+impl EmoteEffect for InchWormEffect {
+  fn update_dimensions(&mut self, w: f32, h: f32) {
+    (self.screen_w, self.screen_h) = (w, h);
+  }
+  fn update(&mut self, seconds: f32) {
+    self.frame_time += seconds;
+    let len = self.segments.len();
+    let (step_pct, move_head) = if self.frame_time >= self.step_time {
+      self.frame_time = 0.0;
+      self.move_head = !self.move_head;
+      if self.move_head {
+        self.life_counter += 1;
+        self.target += self.step;
+        if self.life_counter > 3 { self.is_alive = false; }
+      }
+      (1.0, !self.move_head) 
+    } else { (smootherstep(self.frame_time / self.step_time), self.move_head) };
+    if move_head {
+      let pos = self.seg_tail() + (self.step * step_pct);
+      self.seg_head_mut().clone_from(&pos);
+      for i in 1..(len - 1) {
+        let pct = smootherstep((i as f32 / (len - 1) as f32) * step_pct);
+        self.segments[i] = self.seg_tail() + (self.step * pct);
+      }
+    } else {
+      let pos = self.seg_head() - (self.step * (1.0 - step_pct));
+      self.seg_tail_mut().clone_from(&pos);
+      for i in 1..(len - 1) {
+        let pct = smootherstep((len - i) as f32 / (len - 1) as f32) * (1.0 - step_pct);
+        self.segments[i] = self.seg_head() - (self.step * pct);
+      }
+    }
+  }
+  fn draw(&self, tex: &GraphicsTexture) {
+    let hw = self.screen_w as i32 / 2;
+    let hh = self.screen_h as i32 / 2;
+    for seg in self.segments.iter() {
+      tex.draw(seg.x as i32 + hw, seg.y as i32 + hh, self.x_scale(), self.y_scale(), false);
+    }
+  }
+  fn is_alive(&self) -> bool {
+    self.is_alive
+  }
+}
+

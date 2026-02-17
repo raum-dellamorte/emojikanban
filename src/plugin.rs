@@ -204,7 +204,13 @@ impl VideoTickSource for EmojiKanBan {
               &mut data.rng,
             )
           }
-          11..=100 => {
+          11..=30 => {
+            InchWormEffect::init(
+              w, h, ew, eh,
+              &mut data.rng
+            )
+          }
+          31..=100 => {
             GravityEffect::init(
               w,h,ew,eh,
               GRAVITY, BOUNCE,
