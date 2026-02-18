@@ -15,12 +15,13 @@ There are currently two effects.
 - InchWorm: 20% : Emote spawns at the center as 9 segments that move in a random direction in an inchworm inspired fashion till offscreen.
 - SlideUp: 10% : Emote is scaled up to 512x, slides up from the bottom of the screen, pauses, and slides back down using smootherstep.
 
+Now cross-platform! (Untested on Windows. Using `platform_dirs` crate. Should just work...)
 
-On first use, generates `~/.config/emojikanban/config.kdl` with dummy data to be replaced with `oauth` credentials, and while I believe it's valid KDL, it isn't parsed as KDL, so don't change the order or remove a key or value. There may be room for improvement, but the plugin really just needs three strings from the user; the `bot-account` (or streamer account) used to generate the `oauth` token, the chat `channel` you intend to monitor via IRC for emote usage (generally your streamer account), and the `oauth` token. These are all stored as key value pairs in `config.kdl` which is parsed in fixed order with `nom` ~~for fun and profit~~. It may be parsed as actual KDL in the future, especially if I want to include more settings.
+On first use, generates `[*nix: ~/.config | win: %APPDATA% ]/emojikanban/config.kdl` with dummy data to be replaced with `oauth` credentials, and while I believe it's valid KDL, it isn't parsed as KDL, so don't change the order or remove a key or value. There may be room for improvement, but the plugin really just needs three strings from the user; the `bot-account` (or streamer account) used to generate the `oauth` token, the chat `channel` you intend to monitor via IRC for emote usage (generally your streamer account), and the `oauth` token. These are all stored as key value pairs in `config.kdl` which is parsed in fixed order with `nom` ~~for fun and profit~~. It may be parsed as actual KDL in the future, especially if I want to include more settings.
 
-Emotes are stored in a local sqlite database stored in `~/.config/emojikanban/emotes.db3` (untested on Windows) so that they are only downloaded once.
+Emotes are cached in a local sqlite database located in `[*nix: ~/.config | win: %APPDATA% ]/emojikanban/emotes.db3` (untested on Windows) so that they are only downloaded once.
 
-Use at your own risk :)
+Use at your own risk :) Rust does not prevent errors in logic. The crate I use to make this an OBS plugin is **Archived** since 2025 which may prove to be a problem in the near future.
 
 ```bash
 cargo build -r

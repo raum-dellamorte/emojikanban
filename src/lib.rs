@@ -18,6 +18,7 @@ use {
     },
     string::ObsString,
   },
+  platform_dirs::AppDirs,
   rusqlite::{
     Connection, 
     Result, 
@@ -189,7 +190,7 @@ async fn connect_twitch_client(conf: &EkbConfig) -> Result<irc::client::Client, 
 
 #[allow(clippy::needless_return)] // 'return' statements make the intention more obvious.
 pub async fn get_or_create_config_emojikanban() -> Result<(PathBuf, EkbConfig), String> {
-  let config_path = ".config/emojikanban";
+  let app_name = Some("emojikanban");
   let config_file = "config.kdl";
   let config_kdl = 
 r#"bot-account bot-name                       // <- Replace 'bot-name' with the name of the account used to monitor chat
@@ -215,8 +216,8 @@ oauth       g0Bble0dEE0GukK0enCryPTIon0KEy // <- With or without "oauth:" prefix
 // key    value   This text is ignored with or without '//'
 // 
 "#;
-  if let Some(mut path) = home::home_dir() {
-    path.push(config_path);
+  if let Some(app_dirs) = AppDirs::new(app_name, true) {
+    let mut path = app_dirs.config_dir;
     if let Err(e) = std::fs::create_dir_all(&path) {
       let error = format!("Failed to create config dir: {}\nError: {}", path.display(), e);
       // log::error!("{}", error);
