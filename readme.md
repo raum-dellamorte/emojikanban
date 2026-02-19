@@ -23,17 +23,46 @@ Emotes are cached in a local sqlite database located in `[*nix: ~/.config | win:
 
 Use at your own risk :) Rust does not prevent errors in logic. The crate I use to make this an OBS plugin is **Archived** since 2025 which may prove to be a problem in the near future.
 
-```bash
-cargo build -r
-sudo ln -s $(pwd)/target/release/libemojikanban.so /usr/lib/obs-plugins/
-```
+About The Name
+--------------
 
-`~/.config/emojikanban/config.kdl`:
+エモジ看板 ( エモジかんばん | emoji kanban | Emoji/Emote Signboard )
+
+Config
+======
+
+After first run, edit `[*nix: ~/.config | win: %APPDATA% ]/emojikanban/config.kdl`:
 ```kdl
 bot-account bot-name                       // <- Replace 'bot-name' with the name of the account used to monitor chat
 channel     streamer-name                  // <- and 'streamer-name' with the streamer, most likely your own
 oauth       g0Bble0dEE0GukK0enCryPTIon0KEy // <- With or without "oauth:" prefix
 ```
 
-エモジ看板 ( エモジかんばん | emoji kanban | Emoji/Emote Signboard )
+Compilation/Installation
+========================
 
+```bash
+git clone https://github.com/raum-dellamorte/emojikanban.git
+cd emojikanban
+cargo build -r
+```
+
+Linux installation should be either `sudo ln -s $(pwd)/target/release/libemojikanban.so /usr/lib/obs-plugins/` for ease of updating or `sudo cp $(pwd)/target/release/libemojikanban.so /usr/lib/obs-plugins/` if you don't intend to keep this repo after installation. The Windows DLL is at `target/x86_64-pc-windows-msvc/release/emojikanban.dll` after cross compiling but may be at `target/release/emojikanban.dll` if compiled on Windows with msvc Rust. Feel free to submit a bug report if these instructions are wrong.
+
+Cross-compile from Linux to Windows:
+```bash
+git clone https://github.com/raum-dellamorte/emojikanban.git
+cd emojikanban
+rustup target add x86_64-pc-windows-msvc
+cargo install cargo-xwin
+cargo xwin build -r --target x86_64-pc-windows-msvc
+```
+
+I have not tried compiling on Windows. I've incuded `deps/obs.lib` generated from `obs.dll` from the 32.0.4 Windows release of OBS-Studio in order to compile the project for the `x86_64-pc-windows-msvc` target. As long as you're using the msvc version of Rust, it should compile like normal with `cargo build -r` on Windows.
+
+Generating `obs.lib` on Arch:
+```bash
+yay -S llvm mingw-w64-tools
+gendef obs.dll
+llvm-dlltool -m i386:x86-64 -d obs.def -l obs.lib
+```
