@@ -36,12 +36,10 @@ pub struct EmojiKanBan {
   emote_queue: VecDeque<EmoteOBS>,
   emote_queue_max_length: u32,
   rng: ThreadRng,
-  padding: f64,
-  opacity: u32,
   screen_w: u32,
   screen_h: u32,
-  screen_x: u32,
-  screen_y: u32,
+  screen_offset_x: u32,
+  screen_offset_y: u32,
 }
 
 impl Sourceable for EmojiKanBan {
@@ -61,11 +59,11 @@ impl Sourceable for EmojiKanBan {
     });
     
     let settings = &mut create.settings;
+    let emote_queue_max_length = settings.get(obs_string!("emotes_max")).unwrap_or(200);
     let screen_w = settings.get(obs_string!("screen_width")).unwrap_or(1920);
     let screen_h = settings.get(obs_string!("screen_height")).unwrap_or(1080);
-    let screen_x = settings.get(obs_string!("screen_x")).unwrap_or(0);
-    let screen_y = settings.get(obs_string!("screen_y")).unwrap_or(0);
-    let emote_queue_max_length = settings.get(obs_string!("emotes_max")).unwrap_or(200);
+    let screen_offset_x = settings.get(obs_string!("offset_x")).unwrap_or(0);
+    let screen_offset_y = settings.get(obs_string!("offset_y")).unwrap_or(0);
     
     source.update_source_settings(settings);
     
@@ -76,12 +74,10 @@ impl Sourceable for EmojiKanBan {
       emote_queue: vec![].into(),
       emote_queue_max_length,
       rng: rand::rng(),
-      padding: 0.1,
-      opacity: 255,
       screen_w,
       screen_h,
-      screen_x,
-      screen_y,
+      screen_offset_x,
+      screen_offset_y,
     }
   }
 }
@@ -112,34 +108,10 @@ impl GetPropertiesSource for EmojiKanBan {
     let mut props = Properties::new();
     props
       .add(
-        obs_string!("opacity"), 
-        obs_string!("Change the opacity of the emotes."), 
-        NumberProp::new_int()
-          .with_range(0..=255)
-          .with_slider(),
-      )
-      .add(
         obs_string!("emotes_max"), 
         obs_string!("Cap the number of emotes to draw."), 
         NumberProp::new_int()
           .with_range(0..=1000)
-          .with_slider(),
-      )
-      .add(
-        obs_string!("screen_x"),
-        obs_string!("Offset relative to top left screen - x"),
-        NumberProp::new_int().with_range(1u32..=3840 * 3),
-      )
-      .add(
-        obs_string!("screen_y"),
-        obs_string!("Offset relative to top left screen - y"),
-        NumberProp::new_int().with_range(1u32..=3840 * 3),
-      )
-      .add(
-        obs_string!("padding"),
-        obs_string!("Padding around each window"),
-        NumberProp::new_float(0.001)
-          .with_range(..=0.5)
           .with_slider(),
       )
       .add(
@@ -151,6 +123,16 @@ impl GetPropertiesSource for EmojiKanBan {
         obs_string!("screen_height"),
         obs_string!("Screen height"),
         NumberProp::new_int().with_range(1u32..=3840 * 3),
+      )
+      .add(
+        obs_string!("offset_x"),
+        obs_string!("Offset relative to the top left screen corner. X Offset:"),
+        NumberProp::new_int().with_range(1u32..=3840 * 3),
+      )
+      .add(
+        obs_string!("offset_y"),
+        obs_string!("Offset relative to the top left screen corner. Y Offset:"),
+        NumberProp::new_int().with_range(1u32..=3840 * 3),
       );
     props
   }
@@ -159,9 +141,6 @@ impl GetPropertiesSource for EmojiKanBan {
 impl UpdateSource for EmojiKanBan {
   fn update(&mut self, settings: &mut DataObj, _context: &mut GlobalContext) {
     let data = self;
-    if let Some(opacity) = settings.get(obs_string!("opacity")) {
-      data.opacity = opacity;
-    }
     if let Some(emotes_max) = settings.get(obs_string!("emotes_max")) {
       data.emote_queue_max_length = emotes_max;
     }
@@ -171,14 +150,11 @@ impl UpdateSource for EmojiKanBan {
     if let Some(screen_height) = settings.get(obs_string!("screen_height")) {
       data.screen_h = screen_height;
     }
-    if let Some(screen_x) = settings.get(obs_string!("screen_x")) {
-      data.screen_x = screen_x;
+    if let Some(offset_x) = settings.get(obs_string!("offset_x")) {
+      data.screen_offset_x = offset_x;
     }
-    if let Some(screen_y) = settings.get(obs_string!("screen_y")) {
-      data.screen_y = screen_y;
-    }
-    if let Some(padding) = settings.get(obs_string!("padding")) {
-      data.padding = padding;
+    if let Some(offset_y) = settings.get(obs_string!("offset_y")) {
+      data.screen_offset_y = offset_y;
     }
   }
 }
