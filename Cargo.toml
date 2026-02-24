@@ -25,7 +25,7 @@ image = "0.25.9"
 irc = "1.1.0"
 log = "0.4.29"
 nom = "8.0.0"
-obs-wrapper = "0.4.1"
+obs-wrapper = "0.4.1" # { git = "https://github.com/raum-dellamorte/rust-obs-wrapper.git" }
 platform-dirs = "0.3.0"
 rand = "0.10.0"
 rand_distr = "0.6.0"

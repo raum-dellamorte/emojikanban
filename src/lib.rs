@@ -2,21 +2,19 @@ use {
   crate::{
     confparse::*,
     // effects::*,
-    plugin::{
-      *,
-    },
+    plugin::*,
   },
   futures::StreamExt, 
   irc::client::prelude::*, 
   obs_wrapper::{
-    obs_register_module,
-    obs_string,
     module::{
       LoadContext,
       Module,
       ModuleContext,
     },
-    string::ObsString,
+    obs_register_module,
+    obs_string,
+    string::ObsString
   },
   platform_dirs::AppDirs,
   rusqlite::{
@@ -70,12 +68,6 @@ impl Module for EKBModule {
       .build();
     load_context.register_source(source);
     true
-  }
-  fn unload(&mut self) {
-    // I assume cleanup goes here but I don't know that there's anything to clean up
-  }
-  fn post_load(&mut self) {
-    // I assume that if further setup were needed after load, that would go here
   }
   fn description() -> ObsString {
     obs_string!("Emote Wall and on-screen chat source for OBS.")

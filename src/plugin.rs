@@ -29,9 +29,9 @@ use {
 };
 
 pub struct EmojiKanBan {
-  source: SourceContext,
+  id: usize,
   #[allow(dead_code)]
-  runtime: Runtime,
+  runtime: Option<Runtime>,
   rx: UnboundedReceiver<EmoteData>, 
   emote_queue: VecDeque<EmoteOBS>,
   emote_queue_max_length: u32,
@@ -40,6 +40,23 @@ pub struct EmojiKanBan {
   screen_h: u32,
   screen_offset_x: u32,
   screen_offset_y: u32,
+}
+
+impl Drop for EmojiKanBan {
+  fn drop(&mut self) {
+    self.rx.close();
+    while self.rx.blocking_recv().is_some() {}
+    if let Some(runtime) = self.runtime.take() {
+      runtime.shutdown_timeout(std::time::Duration::from_nanos(500));
+      // runtime.shutdown_background();
+    }
+    unsafe {
+      let source: *mut u8 = self.id as *mut u8;
+      let source = source as *mut obs_source;
+      obs_wrapper::obs_sys::obs_source_remove(source);
+      obs_wrapper::obs_sys::obs_source_release(source);
+    }
+  }
 }
 
 impl Sourceable for EmojiKanBan {
@@ -57,7 +74,7 @@ impl Sourceable for EmojiKanBan {
         log::error!("Twitch monitor died: {}", e);
       }
     });
-    
+    let runtime = Some(runtime);
     let settings = &mut create.settings;
     let emote_queue_max_length = settings.get(obs_string!("emotes_max")).unwrap_or(200);
     let screen_w = settings.get(obs_string!("screen_width")).unwrap_or(1920);
@@ -68,7 +85,7 @@ impl Sourceable for EmojiKanBan {
     source.update_source_settings(settings);
     
     Self {
-      source,
+      id: source.id(),
       runtime,
       rx,
       emote_queue: vec![].into(),
@@ -214,8 +231,7 @@ impl VideoRenderSource for EmojiKanBan {
     let data: &mut EmojiKanBan = self;
     unsafe {
       {
-        let id: usize = { data.source.id().to_owned() };
-        let source: *mut u8 = id as *mut u8;
+        let source: *mut u8 = data.id as *mut u8;
         obs_source_set_flags(source as *mut obs_source, OBS_SOURCE_CUSTOM_DRAW);
       }
       obs_enter_graphics();
