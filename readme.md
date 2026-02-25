@@ -97,6 +97,8 @@ Windows Installation:
 - read (or TrustMeBro) and then run `win_install.bat` with or without building first.
 - or install manually:
   - in `C:\ProgramData\obs-studio\plugins\` create `emojikanban\bin\64bit\` if it doesn't exist.
+    - if in portable mode, copy DLL into `obs-studio\obs-plugins\64bit\` directly.
+    - if you installed OBS with scoop and want out of portable mode, delete `scoop\apps\obs-studio\current\portable_mode.txt`
   - then, into `C:\ProgramData\obs-studio\plugins\emojikanban\bin\64bit\`, copy whichever of the following applies:
     - without building:
       - `./bin/emojikanban.dll`
