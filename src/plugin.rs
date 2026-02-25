@@ -50,12 +50,12 @@ impl Drop for EmojiKanBan {
       runtime.shutdown_timeout(std::time::Duration::from_nanos(500));
       // runtime.shutdown_background();
     }
-    unsafe {
-      let source: *mut u8 = self.id as *mut u8;
-      let source = source as *mut obs_source;
-      obs_wrapper::obs_sys::obs_source_remove(source);
-      obs_wrapper::obs_sys::obs_source_release(source);
-    }
+    // unsafe {
+    //   let source: *mut u8 = self.id as *mut u8;
+    //   let source = source as *mut obs_source;
+    //   obs_wrapper::obs_sys::obs_source_remove(source);
+    //   // obs_wrapper::obs_sys::obs_source_release(source);
+    // }
   }
 }
 
@@ -64,9 +64,9 @@ impl Sourceable for EmojiKanBan {
     obs_string!("emojikanban")
   }
   fn get_type() -> SourceType {
-    SourceType::INPUT
+    SourceType::Input
   }
-  fn create(create: &mut CreatableSourceContext<Self>, mut source: SourceContext) -> Self {
+  fn create(create: &mut CreatableSourceContext<Self>, mut source: SourceRef) -> Self {
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     runtime.spawn(async move {

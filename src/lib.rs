@@ -10,7 +10,7 @@ use {
     module::{
       LoadContext,
       Module,
-      ModuleContext,
+      ModuleRef,
     },
     obs_register_module,
     obs_string,
@@ -45,14 +45,14 @@ pub mod effects;
 pub mod plugin;
 
 struct EKBModule {
-  ctx: ModuleContext,
+  ctx: ModuleRef,
 }
 
 impl Module for EKBModule {
-  fn new(ctx: ModuleContext) -> Self {
+  fn new(ctx: ModuleRef) -> Self {
     Self { ctx }
   }
-  fn get_ctx(&self) -> &ModuleContext {
+  fn get_ctx(&self) -> &ModuleRef {
     &self.ctx
   }
   fn load(&mut self, load_context: &mut LoadContext) -> bool {

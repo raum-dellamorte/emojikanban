@@ -12,9 +12,6 @@ name = "emojikanban"
 path = "src/lib.rs"
 crate-type = ["cdylib", "lib"]
 
-[target.x86_64-pc-windows-msvc]
-rustflags = ["-L", "native=deps"]
-
 [dependencies]
 anyhow = "1.0.100"
 enterpolation = "0.3.0"
@@ -25,7 +22,7 @@ image = "0.25.9"
 irc = "1.1.0"
 log = "0.4.29"
 nom = "8.0.0"
-obs-wrapper = "0.4.1" # { git = "https://github.com/raum-dellamorte/rust-obs-wrapper.git" }
+obs-wrapper = { git = "https://github.com/raum-dellamorte/rust-obs-wrapper.git" } # "0.4.1" #
 platform-dirs = "0.3.0"
 rand = "0.10.0"
 rand_distr = "0.6.0"
