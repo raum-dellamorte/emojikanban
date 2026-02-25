@@ -71,13 +71,41 @@ oauth       g0Bble0dEE0GukK0enCryPTIon0KEy // <- With or without "oauth:" prefix
 Compilation/Installation
 ========================
 
+Build on Linux:
 ```bash
 git clone https://github.com/raum-dellamorte/emojikanban.git
 cd emojikanban
-cargo build -r
+./lin_build.sh
 ```
 
-Linux installation should be either `sudo ln -s $(pwd)/target/release/libemojikanban.so /usr/lib/obs-plugins/` for ease of updating or `sudo cp $(pwd)/target/release/libemojikanban.so /usr/lib/obs-plugins/` if you don't intend to keep this repo after installation. The Windows DLL is at `target/x86_64-pc-windows-msvc/release/emojikanban.dll` after cross compiling but may be at `target/release/emojikanban.dll` if compiled on Windows with msvc Rust. Feel free to submit a bug report if these instructions are wrong.
+Linux Installation Copy/Pasta:
+- built via `lin_build.sh` or `cargo build -r --target x86_64-unknown-linux-gnu`:
+  - symlink: `sudo ln -s $(pwd)/target/x86_64-unknown-linux-gnu/release/libemojikanban.so /usr/lib/obs-plugins/`
+  - copy:    `sudo cp $(pwd)/target/x86_64-unknown-linux-gnu/release/libemojikanban.so /usr/lib/obs-plugins/`
+- built via `cargo build -r`:
+  - symlink: `sudo ln -s $(pwd)/target/release/libemojikanban.so /usr/lib/obs-plugins/`
+  - copy:    `sudo cp $(pwd)/target/release/libemojikanban.so /usr/lib/obs-plugins/`
+
+Build on Windows (requires Visual Studio Build Tools 2022):
+```bash
+git clone https://github.com/raum-dellamorte/emojikanban.git
+cd emojikanban
+.\win_build.bat
+```
+
+Windows Installation:
+- read (or TrustMeBro) and then run `win_install.bat` with or without building first.
+- or install manually:
+  - in `C:\ProgramData\obs-studio\plugins\` create `emojikanban\bin\64bit\` if it doesn't exist.
+  - then, into `C:\ProgramData\obs-studio\plugins\emojikanban\bin\64bit\`, copy whichever of the following applies:
+    - without building:
+      - `./bin/emojikanban.dll`
+    - built via `win_build.bat` or `cargo build -r --target x86_64-pc-windows-msvc`:
+      - `.\target\x86_64-pc-windows-msvc\release\emojikanban.dll`
+    - built via `cargo build -r`:
+      - `.\target\release\emojikanban.dll`
+
+Feel free to submit a bug report if these instructions are wrong.
 
 Cross-compile from Linux to Windows:
 ```bash
