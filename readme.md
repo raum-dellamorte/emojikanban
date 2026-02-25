@@ -86,7 +86,7 @@ Linux Installation Copy/Pasta:
   - symlink: `sudo ln -s $(pwd)/target/release/libemojikanban.so /usr/lib/obs-plugins/`
   - copy:    `sudo cp $(pwd)/target/release/libemojikanban.so /usr/lib/obs-plugins/`
 
-Build on Windows (requires Visual Studio Build Tools 2022):
+Build on Windows (requires Visual Studio Build Tools 2022 and LLVM):
 ```bash
 git clone https://github.com/raum-dellamorte/emojikanban.git
 cd emojikanban
