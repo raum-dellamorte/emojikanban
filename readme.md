@@ -31,8 +31,10 @@ __Planned features__ other than effects:
    - [ ] Configurable global cooldowns, all effects or per effect
    - [ ] Configurable user cooldowns
    - [ ] Optionally require bits, points, follow or sub to activate for some amount of time
-- [ ] Properly support KDL for configuration
+- [x] Support KDL for configuration
+   - [ ] Add YouTube auth stuffs
    - [ ] Support the above planned Anti-Spam features
+- [ ] Add YouTube live chat support
 
 __Now cross-platform!__ (Minimal testing on Windows. Using `platform_dirs` crate. Should *just work*...)
 
@@ -46,13 +48,13 @@ Basic Instructions:
 - Add `emojikanban` as a source in your active scene after installing the plugin and ensuring that it's enabled. It generates a configuration file if it does not already exist and initializes it with dummy data to be replaced with your `oauth` credentials
   - `[*nix: ~/.config | win: %APPDATA% ]/emojikanban/config.kdl`
   - **DON'T** edit with `notepad.exe` as it may cause a failure to parse the file. Notepad++ or a code editor is recommended.
+    - This might be fixed... Untested
   - The plugin needs three strings from the user:
     - the `bot-account` (or streamer account) used to generate
     - the chat `channel` you intend to monitor via IRC for emote usage (generally your streamer account)
+      - this may currently or will soon be optional
     - and the `oauth` token
-  - The file is technically valid [KDL](https://kdl.dev/), but it isn't parsed as KDL, so don't change the order or remove a key or value.
-  - These are stored as key value pairs parsed in fixed order with `nom` ~~for fun and profit~~.
-  - It will be parsed as actual KDL in the future in order to handle more settings like the planned features above
+  - The file is now parsed as [KDL](https://kdl.dev/), but removing a key or value still may cause a failure to parse. [WIP]
 - Instructions for acquiring the needed OAUTH token can be found below under "Need OAUTH?" heading
   - If you got the token with your streamer account, use your streamer account for both `bot-account` and `channel` in `config.kdl`
 - Once `config.kdl` is filled out and saved, restart OBS Studio and it should connect to the IRC channel of your streamer chat

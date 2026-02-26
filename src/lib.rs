@@ -1,11 +1,18 @@
 use {
   crate::{
-    confparse::*,
+    config_kdl::*,
+    // confparse::*,
     // effects::*,
     plugin::*,
   },
-  futures::StreamExt, 
-  irc::client::prelude::*, 
+  anyhow::Result,
+  futures::StreamExt,
+  irc::client::prelude::*,
+  kdl::{
+    KdlDocument,
+    KdlError,
+    // KdlValue,
+  },
   obs_wrapper::{
     module::{
       LoadContext,
@@ -19,12 +26,9 @@ use {
   platform_dirs::AppDirs,
   rusqlite::{
     Connection, 
-    Result, 
-    params
-  }, 
-  std::{
-    path::PathBuf,
-  }, 
+    params,
+  },
+  std::path::PathBuf,
   tokio::sync::mpsc::UnboundedSender,
   twitch_api::{
     helix::HelixClient, 
@@ -32,7 +36,7 @@ use {
       AccessToken, 
       UserToken, 
     }
-  }, 
+  },
   twitch_message::messages::{
     Message as TwitchMsg,
     MessageKind,
@@ -40,7 +44,8 @@ use {
   },
 };
 
-mod confparse;
+mod config_kdl;
+// mod confparse;
 pub mod effects;
 pub mod plugin;
 
@@ -164,7 +169,7 @@ fn connect_sqlite(path: &mut PathBuf) -> Result<Connection, rusqlite::Error> {
   Ok(db)
 }
 
-async fn connect_twitch_client(conf: &EkbConfig) -> Result<irc::client::Client, irc::error::Error> {
+async fn connect_twitch_client(conf: &EkbTwitchConfig) -> Result<irc::client::Client, irc::error::Error> {
   let config = Config {
     nickname: Some(conf.bot_account()),
     server: Some("irc.chat.twitch.tv".to_owned()),
@@ -181,7 +186,7 @@ async fn connect_twitch_client(conf: &EkbConfig) -> Result<irc::client::Client, 
 }
 
 #[allow(clippy::needless_return)] // 'return' statements make the intention more obvious.
-pub async fn get_or_create_config_emojikanban() -> Result<(PathBuf, EkbConfig), String> {
+pub async fn get_or_create_config_emojikanban() -> Result<(PathBuf, EkbTwitchConfig), String> {
   let app_name = Some("emojikanban");
   let config_file = "config.kdl";
   let config_kdl = 
@@ -255,8 +260,10 @@ oauth       g0Bble0dEE0GukK0enCryPTIon0KEy // <- With or without "oauth:" prefix
 }
 
 #[allow(clippy::needless_return)]
-async fn validate_config(mut config_path: PathBuf, conf: String) -> Result<(PathBuf, EkbConfig), String> {
-  match parse_config(&conf) {
+async fn validate_config(mut config_path: PathBuf, conf: String) -> Result<(PathBuf, EkbTwitchConfig), String> {
+  let conf = &conf;
+  let doc: Result<KdlDocument, KdlError> = conf.parse();
+  match doc {
     Err(e) => {
       let error = format!("Failed to parse {}\nError: {}", config_path.display(), e);
       log::error!("{}", error);
@@ -264,36 +271,82 @@ async fn validate_config(mut config_path: PathBuf, conf: String) -> Result<(Path
     }
     Ok(conf) => {
       let client: HelixClient<reqwest::Client> = HelixClient::default();
-      let mut oauth = conf.oauth();
-      if oauth.len() >= 6 && &oauth[..6] == "oauth:" {
-        oauth = oauth[6..].to_owned();
-      }
-      let token = AccessToken::new(oauth);
-      match UserToken::from_token(&client, token.clone()).await {
+      match EkbTwitchConfig::try_from(conf) {
         Err(e) => {
-          let error = format!("Failed to validate oauth token: {:?}, {}", conf, e);
+          let error = format!("Failed to parse {}\nError: {}", config_path.display(), e);
           log::error!("{}", error);
           return Err(error);
         }
-        Ok(token) => {
-          let bot_valid = client.get_channel_from_login(&conf.bot_account(), &token).await
-            .expect("Failure awaiting client.get_channel_from_login for bot account.");
-          let chn_valid = client.get_channel_from_login(&conf.channel(), &token).await
-            .expect("Failure awaiting client.get_channel_from_login for streamer channel.");
-          if bot_valid.is_some() && chn_valid.is_some() {
-            config_path.pop();
-            return Ok((config_path, conf));
-          } else {
-            let error = format!(
-              "OAUTH Token valid, but either the bot_username or the channel is invalid in: {}\nbot-account: {} {:?}\nchannel: {} {:?}",
-              config_path.display(), conf.bot_account(), bot_valid, conf.channel(), chn_valid, 
-            );
-            log::error!("{}", error);
-            return Err(error);
+        Ok(conf) => {
+          let token = AccessToken::new(conf.oauth());
+          match UserToken::from_token(&client, token.clone()).await {
+            Err(e) => {
+              let error = format!("Failed to validate oauth token: {:?}, {}", conf, e);
+              log::error!("{}", error);
+              return Err(error);
+            }
+            Ok(token) => {
+              let bot_account = conf.bot_account();
+              let channel = conf.channel();
+              let bot_valid = client.get_channel_from_login(&bot_account, &token).await
+                .expect("Failure awaiting client.get_channel_from_login for bot account.");
+              let chn_valid = client.get_channel_from_login(&channel, &token).await
+                .expect("Failure awaiting client.get_channel_from_login for streamer channel.");
+              if bot_valid.is_some() && chn_valid.is_some() {
+                config_path.pop();
+                return Ok((config_path, conf));
+              } else {
+                let error = format!(
+                  "OAUTH Token valid, but either the bot_username or the channel is invalid in: {}\nbot-account: {} {:?}\nchannel: {} {:?}",
+                  config_path.display(), bot_account, bot_valid, channel, chn_valid, 
+                );
+                log::error!("{}", error);
+                return Err(error);
+              }
+            }
           }
         }
       }
     }
   }
+  // match parse_config(&conf) {
+  //   Err(e) => {
+  //     let error = format!("Failed to parse {}\nError: {}", config_path.display(), e);
+  //     log::error!("{}", error);
+  //     return Err(error);
+  //   }
+  //   Ok(conf) => {
+  //     let client: HelixClient<reqwest::Client> = HelixClient::default();
+  //     let mut oauth = conf.oauth();
+  //     if oauth.len() >= 6 && &oauth[..6] == "oauth:" {
+  //       oauth = oauth[6..].to_owned();
+  //     }
+  //     let token = AccessToken::new(oauth);
+  //     match UserToken::from_token(&client, token.clone()).await {
+  //       Err(e) => {
+  //         let error = format!("Failed to validate oauth token: {:?}, {}", conf, e);
+  //         log::error!("{}", error);
+  //         return Err(error);
+  //       }
+  //       Ok(token) => {
+  //         let bot_valid = client.get_channel_from_login(&conf.bot_account(), &token).await
+  //           .expect("Failure awaiting client.get_channel_from_login for bot account.");
+  //         let chn_valid = client.get_channel_from_login(&conf.channel(), &token).await
+  //           .expect("Failure awaiting client.get_channel_from_login for streamer channel.");
+  //         if bot_valid.is_some() && chn_valid.is_some() {
+  //           config_path.pop();
+  //           return Ok((config_path, conf));
+  //         } else {
+  //           let error = format!(
+  //             "OAUTH Token valid, but either the bot_username or the channel is invalid in: {}\nbot-account: {} {:?}\nchannel: {} {:?}",
+  //             config_path.display(), conf.bot_account(), bot_valid, conf.channel(), chn_valid, 
+  //           );
+  //           log::error!("{}", error);
+  //           return Err(error);
+  //         }
+  //       }
+  //     }
+  //   }
+  // }
 }
 

@@ -20,6 +20,7 @@ futures = "0.3.31"
 glam = "0.32.0"
 image = "0.25.9"
 irc = "1.1.0"
+kdl = "6.5.0"
 log = "0.4.29"
 nom = "8.0.0"
 obs-wrapper = { git = "https://github.com/raum-dellamorte/rust-obs-wrapper.git" } # "0.4.1" #
