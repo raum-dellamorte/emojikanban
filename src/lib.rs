@@ -1,8 +1,6 @@
 use {
   crate::{
     config_kdl::*,
-    // confparse::*,
-    // effects::*,
     plugin::*,
   },
   anyhow::Result,
@@ -37,15 +35,17 @@ use {
       UserToken, 
     }
   },
-  twitch_message::messages::{
-    Message as TwitchMsg,
-    MessageKind,
-    Privmsg,
-  },
+  // twitch_message::{
+  //   // IntoStatic,
+  //   messages::{
+  //     Message as TwitchMsg,
+  //     MessageKind,
+  //     Privmsg,
+  //   },
+  // },
 };
 
 mod config_kdl;
-// mod confparse;
 pub mod effects;
 pub mod plugin;
 
@@ -96,60 +96,96 @@ pub async fn run(tx: UnboundedSender<EmoteData>) -> Result<(), anyhow::Error> {
   let mut client = connect_twitch_client(&conf).await?;
   let mut stream = client.stream()?;
   while let Some(irc_response) = stream.next().await.transpose()? {
-    let irc_msg = irc_response.to_string();
-    let result = twitch_message::parse(&irc_msg)?;
-    let msg: TwitchMsg<'_> = result.message;
-    if let MessageKind::Privmsg = msg.kind && let Some(pm) = msg.as_typed_message::<Privmsg>() {
-      for emote in pm.emotes() {
-        let uri_v1 = format!("https://static-cdn.jtvnw.net/emoticons/v1/{}/3.0", emote.id);
-        let uri_v2 = format!("https://static-cdn.jtvnw.net/emoticons/v2/{}/default/light/3.0", emote.id);
-        // println!("Emote URI: {}", uri_v1);
-        let emote_data: EmoteData = if let Ok(emote_data) = emotes.query_one(
-          "SELECT id, name, img FROM emotes WHERE id=?1", params![emote.id.to_string()], |row| {
-            Ok(EmoteData{
-              id: row.get(0)?,
-              name: row.get(1)?,
-              img: row.get(2)?,
-            })
-          })
-        {
-          log::info!("Loaded emote id {} from sqlite", emote.id);
-          emote_data
-        } else {
-          log::info!("Could not find id {} in DB, downloading image to DB...", emote.id);
-          let img_data = if let Ok(data) = reqwest::get(uri_v2).await {
-            data 
-          } else if let Ok(data) = reqwest::get(uri_v1).await { data } else {
-            log::error!("Failed to download image data for emote id {} at step 1", emote.id);
-            continue;
-          };
-          let img_bytes = if let Ok(bytes) = img_data.bytes().await { bytes } else {
-            log::error!("Failed to download image data for emote id {} at step 2", emote.id);
-            continue;
-          };
-          if image::load_from_memory(&img_bytes).is_err() {
-            log::error!("Failed to validate downloaded image data for emote id {}\n  data: {:?}", emote.id, img_bytes);
-            continue;
-          }
-          let emote_data = EmoteData{
-            id: emote.id.to_string(),
-            name: emote.name.into_owned(), // FixMe: this sometimes ends up with several names, probably when multiple emotes are used in the same chat
-            img: img_bytes.into(),
-          };
-          if let Err(e) = emotes.execute(
-            "INSERT INTO emotes (id, name, img) VALUES (?1, ?2, ?3)",
-            params![emote_data.id.clone(), emote_data.name.clone(), emote_data.img.clone()],
-          ) {
-            log::error!("Failed to write emote to DB: {}", e)
-          };
-          log::info!("Loaded emote id {} from URI", emote.id);
-          emote_data
-        };
-        let _ = tx.send(emote_data);
+    match irc_response.to_twitch_message_privmsg() {
+      Err(_msg) => {
+        // Do something with this?
       }
-    };
+      Ok(pm) => {
+        for emote in pm.emotes() {
+          let uri_v1 = format!("https://static-cdn.jtvnw.net/emoticons/v1/{}/3.0", emote.id);
+          let uri_v2 = format!("https://static-cdn.jtvnw.net/emoticons/v2/{}/default/light/3.0", emote.id);
+          // println!("Emote URI: {}", uri_v1);
+          let emote_data: EmoteData = if let Ok(emote_data) = emotes.query_one(
+            "SELECT id, name, img FROM emotes WHERE id=?1", params![emote.id.to_string()], |row| {
+              Ok(EmoteData{
+                id: row.get(0)?,
+                name: row.get(1)?,
+                img: row.get(2)?,
+              })
+            })
+          {
+            log::info!("Loaded emote id {} from sqlite", emote.id);
+            emote_data
+          } else {
+            log::info!("Could not find id {} in DB, downloading image to DB...", emote.id);
+            let img_data = if let Ok(data) = reqwest::get(uri_v2).await {
+              data 
+            } else if let Ok(data) = reqwest::get(uri_v1).await { data } else {
+              log::error!("Failed to download image data for emote id {} at step 1", emote.id);
+              continue;
+            };
+            let img_bytes = if let Ok(bytes) = img_data.bytes().await { bytes } else {
+              log::error!("Failed to download image data for emote id {} at step 2", emote.id);
+              continue;
+            };
+            if image::load_from_memory(&img_bytes).is_err() {
+              log::error!("Failed to validate downloaded image data for emote id {}\n  data: {:?}", emote.id, img_bytes);
+              continue;
+            }
+            let emote_data = EmoteData{
+              id: emote.id.to_string(),
+              name: emote.name.into_owned(), // FixMe: this sometimes ends up with several names, probably when multiple emotes are used in the same chat
+              img: img_bytes.into(),
+            };
+            if let Err(e) = emotes.execute(
+              "INSERT INTO emotes (id, name, img) VALUES (?1, ?2, ?3)",
+              params![emote_data.id.clone(), emote_data.name.clone(), emote_data.img.clone()],
+            ) {
+              log::error!("Failed to write emote to DB: {}", e)
+            };
+            log::info!("Loaded emote id {} from URI", emote.id);
+            emote_data
+          };
+          let _ = tx.send(emote_data);
+        }
+      }
+    }
   }
   Ok(())
+}
+
+trait ToTwitchMessagePrivmsg: Sized {
+  fn to_twitch_message_privmsg(self) -> Result<twitch_message::messages::Privmsg<'static>, Self>;
+}
+
+impl ToTwitchMessagePrivmsg for irc::proto::Message {
+  fn to_twitch_message_privmsg(self) -> Result<twitch_message::messages::Privmsg<'static>, Self> {
+    // Fix for single emote not being detected.
+    // Provided by [museun](https://github.com/museun)
+    // 
+    // Chat messages with only a single word or emote are incorrectly encoded
+    // by `irc = "1.1.0"`. It fails to preceed the chat data with a colon in
+    // that case. So we skip their .to_string() implementation and convert
+    // directly to `twitch_message::messages::Privmsg`
+    let irc::proto::Command::PRIVMSG(target, data) = &self.command else {
+      return Err(self);
+    };
+    use twitch_message::builders::{PrivmsgBuilder, TagsBuilder};
+    let mut privmsg_builder = PrivmsgBuilder::new().channel(target).data(data);
+    if let Some(sender) = self.source_nickname() {
+      privmsg_builder = privmsg_builder.sender(sender);
+    }
+    let mut tags_builder = TagsBuilder::default();
+    if let Some(tags) = &self.tags {
+      for irc::proto::message::Tag(key, value) in tags {
+        tags_builder = tags_builder.add(key, value.as_deref().unwrap_or(""));
+      }
+    }
+    privmsg_builder
+      .tags(tags_builder.finish())
+      .finish_privmsg()
+      .map_err(|_| self)
+  }
 }
 
 fn connect_sqlite(path: &mut PathBuf) -> Result<Connection, rusqlite::Error> {
@@ -195,22 +231,9 @@ channel     streamer-name                  // <- and 'streamer-name' with the st
 oauth       g0Bble0dEE0GukK0enCryPTIon0KEy // <- With or without "oauth:" prefix
 // The oauth should be generated from the account you use
 // as the 'bot-account'. If you use your streamer account,
-// you should be able to use the same account name for 
-// 'bot-account' and 'channel', but I don't know for sure.
-// 'channel' is only used to select the irc channel to 
+// you can use the same account name for 'bot-account' and
+// 'channel'. 'channel' is only used to select the irc channel to 
 // monitor for emotes, and eventually for chat.
-// 
-// !!! This is not a real .kdl file. !!! The parser expects 
-// bot-account on the first line, channel on the second line, 
-// and oauth on the third line, each followed by whitespace 
-// then by a string of non-space characters as the value. 
-// Any whitespace after the value marks the beginning of a
-// comment till the end of the line such that text on the 
-// same line after the value is ignored. The '//' are there 
-// for decoration, even in this block because parsing stops 
-// after the oauth line's value.
-// 
-// key    value   This text is ignored with or without '//'
 // 
 "#;
   if let Some(app_dirs) = AppDirs::new(app_name, true) {
@@ -309,44 +332,5 @@ async fn validate_config(mut config_path: PathBuf, conf: String) -> Result<(Path
       }
     }
   }
-  // match parse_config(&conf) {
-  //   Err(e) => {
-  //     let error = format!("Failed to parse {}\nError: {}", config_path.display(), e);
-  //     log::error!("{}", error);
-  //     return Err(error);
-  //   }
-  //   Ok(conf) => {
-  //     let client: HelixClient<reqwest::Client> = HelixClient::default();
-  //     let mut oauth = conf.oauth();
-  //     if oauth.len() >= 6 && &oauth[..6] == "oauth:" {
-  //       oauth = oauth[6..].to_owned();
-  //     }
-  //     let token = AccessToken::new(oauth);
-  //     match UserToken::from_token(&client, token.clone()).await {
-  //       Err(e) => {
-  //         let error = format!("Failed to validate oauth token: {:?}, {}", conf, e);
-  //         log::error!("{}", error);
-  //         return Err(error);
-  //       }
-  //       Ok(token) => {
-  //         let bot_valid = client.get_channel_from_login(&conf.bot_account(), &token).await
-  //           .expect("Failure awaiting client.get_channel_from_login for bot account.");
-  //         let chn_valid = client.get_channel_from_login(&conf.channel(), &token).await
-  //           .expect("Failure awaiting client.get_channel_from_login for streamer channel.");
-  //         if bot_valid.is_some() && chn_valid.is_some() {
-  //           config_path.pop();
-  //           return Ok((config_path, conf));
-  //         } else {
-  //           let error = format!(
-  //             "OAUTH Token valid, but either the bot_username or the channel is invalid in: {}\nbot-account: {} {:?}\nchannel: {} {:?}",
-  //             config_path.display(), conf.bot_account(), bot_valid, conf.channel(), chn_valid, 
-  //           );
-  //           log::error!("{}", error);
-  //           return Err(error);
-  //         }
-  //       }
-  //     }
-  //   }
-  // }
 }
 
