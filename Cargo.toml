@@ -35,6 +35,7 @@ rusqlite = { version = "0.38.0", features = ["bundled"] }
 tokio = { version = "1.49.0", features = ["rt", "rt-multi-thread", "macros", "net", "time"] }
 twitch_api = { version = "0.7.2", features = ["helix", "reqwest"] }
 twitch_message = "0.1.2"
+youtube_chat = "0.2.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 openssl = { version = "0.10.81", features = ["vendored"] }
