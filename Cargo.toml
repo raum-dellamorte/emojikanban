@@ -39,4 +39,3 @@ youtube_chat = "0.2.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 openssl = { version = "0.10.81", features = ["vendored"] }
-
