@@ -5,9 +5,16 @@ fn main() -> Result<(), anyhow::Error> {
     .filter(None, log::LevelFilter::Info)
     .init();
   let runtime = tokio::runtime::Runtime::new().unwrap();
+  let (config_path, conf) = runtime.block_on(async {
+    match emojikanban::get_or_create_config_emojikanban().await {
+      Err(e)  => { Err(anyhow::format_err!("{}", e)) }
+      Ok(res) => { Ok(res) }
+    }
+  })?;
+  // let conf = Arc::new(conf);
   let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<emojikanban::plugin::EmoteData>();
   runtime.spawn(async move {
-    if let Err(e) = emojikanban::run(tx).await {
+    if let Err(e) = emojikanban::start_twitch_monitor(conf, config_path, tx).await {
       log::error!("Twitch monitor died: {}", e);
     };
   });

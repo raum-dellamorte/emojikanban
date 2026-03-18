@@ -87,11 +87,7 @@ impl Module for EKBModule {
 
 obs_register_module!(EKBModule);
 
-pub async fn run(tx: UnboundedSender<EmoteData>) -> Result<(), anyhow::Error> {
-  let (mut config_path, conf) = match get_or_create_config_emojikanban().await {
-    Err(e) => { return Err(anyhow::format_err!("{}", e)); }
-    Ok(res) => { res }
-  };
+pub async fn start_twitch_monitor(conf: EkbTwitchConfig, mut config_path: PathBuf, tx: UnboundedSender<EmoteData>) -> Result<(), anyhow::Error> {
   let emotes = connect_sqlite(&mut config_path)?;
   let mut client = connect_twitch_client(&conf).await?;
   let mut stream = client.stream()?;
