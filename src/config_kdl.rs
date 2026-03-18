@@ -81,3 +81,28 @@ impl EkbTwitchValues for KdlDocument {
   }
 }
 
+pub trait EkbYouTubeValues {
+  fn youtube(&self) -> Option<&KdlDocument>;
+  fn channel_id(&self) -> Option<String>;
+}
+
+impl EkbYouTubeValues for KdlDocument {
+  fn youtube(&self) -> Option<&KdlDocument> {
+    if let Some(node) = self.get("youtube") {
+      node.children()
+    } else { None }
+  }
+  fn channel_id(&self) -> Option<String> {
+    if let Some(node) = self.get("channel-id") {
+      if let Some(entry) = node.entry(0) {
+        match entry.value() {
+          KdlValue::String(val) => { Some(val.to_owned())}
+          _ => { None }
+        }
+      } else { None }
+    } else if let Some(doc) = self.youtube() {
+      doc.channel_id()
+    } else { None }
+  }
+}
+
