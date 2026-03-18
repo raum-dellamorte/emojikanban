@@ -305,44 +305,5 @@ async fn validate_config(mut config_path: PathBuf, conf: String) -> Result<(Path
       }
     }
   }
-  // match parse_config(&conf) {
-  //   Err(e) => {
-  //     let error = format!("Failed to parse {}\nError: {}", config_path.display(), e);
-  //     log::error!("{}", error);
-  //     return Err(error);
-  //   }
-  //   Ok(conf) => {
-  //     let client: HelixClient<reqwest::Client> = HelixClient::default();
-  //     let mut oauth = conf.oauth();
-  //     if oauth.len() >= 6 && &oauth[..6] == "oauth:" {
-  //       oauth = oauth[6..].to_owned();
-  //     }
-  //     let token = AccessToken::new(oauth);
-  //     match UserToken::from_token(&client, token.clone()).await {
-  //       Err(e) => {
-  //         let error = format!("Failed to validate oauth token: {:?}, {}", conf, e);
-  //         log::error!("{}", error);
-  //         return Err(error);
-  //       }
-  //       Ok(token) => {
-  //         let bot_valid = client.get_channel_from_login(&conf.bot_account(), &token).await
-  //           .expect("Failure awaiting client.get_channel_from_login for bot account.");
-  //         let chn_valid = client.get_channel_from_login(&conf.channel(), &token).await
-  //           .expect("Failure awaiting client.get_channel_from_login for streamer channel.");
-  //         if bot_valid.is_some() && chn_valid.is_some() {
-  //           config_path.pop();
-  //           return Ok((config_path, conf));
-  //         } else {
-  //           let error = format!(
-  //             "OAUTH Token valid, but either the bot_username or the channel is invalid in: {}\nbot-account: {} {:?}\nchannel: {} {:?}",
-  //             config_path.display(), conf.bot_account(), bot_valid, conf.channel(), chn_valid, 
-  //           );
-  //           log::error!("{}", error);
-  //           return Err(error);
-  //         }
-  //       }
-  //     }
-  //   }
-  // }
 }
 
