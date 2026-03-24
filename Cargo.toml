@@ -23,7 +23,7 @@ irc = "1.1.0"
 kdl = "6.5.0"
 log = "0.4.29"
 nom = "8.0.0"
-obs-wrapper = { git = "https://github.com/raum-dellamorte/rust-obs-wrapper.git" } # "0.4.1" #
+obs-wrapper = { git = "https://github.com/raum-dellamorte/rust-obs-wrapper.git", branch = "compat_32.0.4" } # "0.4.1" #
 platform-dirs = "0.3.0"
 rand = "0.10.0"
 rand_distr = "0.6.0"
