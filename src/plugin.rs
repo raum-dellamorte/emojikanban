@@ -68,7 +68,7 @@ impl Sourceable for EmojiKanBan {
   }
   fn create(create: &mut CreatableSourceContext<Self>, mut source: SourceRef) -> Self {
     let runtime = tokio::runtime::Runtime::new().unwrap();
-    let (mut config_path, conf) = runtime.block_on(async {
+    let (ekb_conf_dirs, conf) = runtime.block_on(async {
       match crate::get_or_create_config_emojikanban().await {
         Err(e) => { panic!("{}", e); } // Panic at the Failure
         Ok(res) => { res }
@@ -77,7 +77,7 @@ impl Sourceable for EmojiKanBan {
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     runtime.spawn(async move {
-      if let Err(e) = crate::start_twitch_monitor(conf, config_path, tx).await {
+      if let Err(e) = crate::start_twitch_monitor(ekb_conf_dirs, conf, tx).await {
         log::error!("Twitch monitor died: {}", e);
       }
     });

@@ -1,8 +1,6 @@
 use {
   crate::{
     config_kdl::*,
-    // confparse::*,
-    // effects::*,
     plugin::*,
   },
   anyhow::Result,
@@ -37,15 +35,17 @@ use {
       UserToken, 
     }
   },
-  twitch_message::messages::{
-    Message as TwitchMsg,
-    MessageKind,
-    Privmsg,
-  },
+  // twitch_message::{
+  //   // IntoStatic,
+  //   messages::{
+  //     Message as TwitchMsg,
+  //     MessageKind,
+  //     Privmsg,
+  //   },
+  // },
 };
 
 mod config_kdl;
-// mod confparse;
 pub mod effects;
 pub mod plugin;
 
@@ -87,71 +87,107 @@ impl Module for EKBModule {
 
 obs_register_module!(EKBModule);
 
-pub async fn start_twitch_monitor(conf: EkbTwitchConfig, mut config_path: PathBuf, tx: UnboundedSender<EmoteData>) -> Result<(), anyhow::Error> {
-  let emotes = connect_sqlite(&mut config_path)?;
+pub async fn start_twitch_monitor(mut ekb_conf_dirs: EkbConfigDirs, conf: EkbTwitchConfig, tx: UnboundedSender<EmoteData>) -> Result<(), anyhow::Error> {
+  let emotes = connect_sqlite(&mut ekb_conf_dirs)?;
   let mut client = connect_twitch_client(&conf).await?;
   let mut stream = client.stream()?;
   while let Some(irc_response) = stream.next().await.transpose()? {
-    let irc_msg = irc_response.to_string();
-    let result = twitch_message::parse(&irc_msg)?;
-    let msg: TwitchMsg<'_> = result.message;
-    if let MessageKind::Privmsg = msg.kind && let Some(pm) = msg.as_typed_message::<Privmsg>() {
-      for emote in pm.emotes() {
-        let uri_v1 = format!("https://static-cdn.jtvnw.net/emoticons/v1/{}/3.0", emote.id);
-        let uri_v2 = format!("https://static-cdn.jtvnw.net/emoticons/v2/{}/default/light/3.0", emote.id);
-        // println!("Emote URI: {}", uri_v1);
-        let emote_data: EmoteData = if let Ok(emote_data) = emotes.query_one(
-          "SELECT id, name, img FROM emotes WHERE id=?1", params![emote.id.to_string()], |row| {
-            Ok(EmoteData{
-              id: row.get(0)?,
-              name: row.get(1)?,
-              img: row.get(2)?,
-            })
-          })
-        {
-          log::info!("Loaded emote id {} from sqlite", emote.id);
-          emote_data
-        } else {
-          log::info!("Could not find id {} in DB, downloading image to DB...", emote.id);
-          let img_data = if let Ok(data) = reqwest::get(uri_v2).await {
-            data 
-          } else if let Ok(data) = reqwest::get(uri_v1).await { data } else {
-            log::error!("Failed to download image data for emote id {} at step 1", emote.id);
-            continue;
-          };
-          let img_bytes = if let Ok(bytes) = img_data.bytes().await { bytes } else {
-            log::error!("Failed to download image data for emote id {} at step 2", emote.id);
-            continue;
-          };
-          if image::load_from_memory(&img_bytes).is_err() {
-            log::error!("Failed to validate downloaded image data for emote id {}\n  data: {:?}", emote.id, img_bytes);
-            continue;
-          }
-          let emote_data = EmoteData{
-            id: emote.id.to_string(),
-            name: emote.name.into_owned(), // FixMe: this sometimes ends up with several names, probably when multiple emotes are used in the same chat
-            img: img_bytes.into(),
-          };
-          if let Err(e) = emotes.execute(
-            "INSERT INTO emotes (id, name, img) VALUES (?1, ?2, ?3)",
-            params![emote_data.id.clone(), emote_data.name.clone(), emote_data.img.clone()],
-          ) {
-            log::error!("Failed to write emote to DB: {}", e)
-          };
-          log::info!("Loaded emote id {} from URI", emote.id);
-          emote_data
-        };
-        let _ = tx.send(emote_data);
+    match irc_response.to_twitch_message_privmsg() {
+      Err(_msg) => {
+        // Do something with this?
       }
-    };
+      Ok(pm) => {
+        for emote in pm.emotes() {
+          let uri_v1 = format!("https://static-cdn.jtvnw.net/emoticons/v1/{}/3.0", emote.id);
+          let uri_v2 = format!("https://static-cdn.jtvnw.net/emoticons/v2/{}/default/light/3.0", emote.id);
+          // println!("Emote URI: {}", uri_v1);
+          let emote_data: EmoteData = if let Ok(emote_data) = emotes.query_one(
+            "SELECT id, name, img FROM emotes WHERE id=?1", params![emote.id.to_string()], |row| {
+              Ok(EmoteData{
+                id: row.get(0)?,
+                name: row.get(1)?,
+                img: row.get(2)?,
+              })
+            })
+          {
+            log::info!("Loaded emote id {} from sqlite", emote.id);
+            emote_data
+          } else {
+            log::info!("Could not find id {} in DB, downloading image to DB...", emote.id);
+            let img_data = if let Ok(data) = reqwest::get(uri_v2).await {
+              data 
+            } else if let Ok(data) = reqwest::get(uri_v1).await { data } else {
+              log::error!("Failed to download image data for emote id {} at step 1", emote.id);
+              continue;
+            };
+            let img_bytes = if let Ok(bytes) = img_data.bytes().await { bytes } else {
+              log::error!("Failed to download image data for emote id {} at step 2", emote.id);
+              continue;
+            };
+            if image::load_from_memory(&img_bytes).is_err() {
+              log::error!("Failed to validate downloaded image data for emote id {}\n  data: {:?}", emote.id, img_bytes);
+              continue;
+            }
+            let emote_data = EmoteData{
+              id: emote.id.to_string(),
+              name: emote.name.into_owned(), // FixMe: this sometimes ends up with several names, probably when multiple emotes are used in the same chat
+              img: img_bytes.into(),
+            };
+            if let Err(e) = emotes.execute(
+              "INSERT INTO emotes (id, name, img) VALUES (?1, ?2, ?3)",
+              params![emote_data.id.clone(), emote_data.name.clone(), emote_data.img.clone()],
+            ) {
+              log::error!("Failed to write emote to DB: {}", e)
+            };
+            log::info!("Loaded emote id {} from URI", emote.id);
+            emote_data
+          };
+          let _ = tx.send(emote_data);
+        }
+      }
+    }
   }
   Ok(())
 }
 
-fn connect_sqlite(path: &mut PathBuf) -> Result<Connection, rusqlite::Error> {
-  if path.is_file() { path.pop(); }
-  path.push("emotes.db3");
-  let db = Connection::open(path)?;
+trait ToTwitchMessagePrivmsg: Sized {
+  fn to_twitch_message_privmsg(self) -> Result<twitch_message::messages::Privmsg<'static>, Self>;
+}
+
+impl ToTwitchMessagePrivmsg for irc::proto::Message {
+  fn to_twitch_message_privmsg(self) -> Result<twitch_message::messages::Privmsg<'static>, Self> {
+    // Fix for single emote not being detected.
+    // Provided by [museun](https://github.com/museun)
+    // 
+    // Chat messages with only a single word or emote are incorrectly encoded
+    // by `irc = "1.1.0"`. It fails to preceed the chat data with a colon in
+    // that case. So we skip their .to_string() implementation and convert
+    // directly to `twitch_message::messages::Privmsg`
+    let irc::proto::Command::PRIVMSG(target, data) = &self.command else {
+      return Err(self);
+    };
+    use twitch_message::builders::{PrivmsgBuilder, TagsBuilder};
+    let mut privmsg_builder = PrivmsgBuilder::new().channel(target).data(data);
+    if let Some(sender) = self.source_nickname() {
+      privmsg_builder = privmsg_builder.sender(sender);
+    }
+    let mut tags_builder = TagsBuilder::default();
+    if let Some(tags) = &self.tags {
+      for irc::proto::message::Tag(key, value) in tags {
+        tags_builder = tags_builder.add(key, value.as_deref().unwrap_or(""));
+      }
+    }
+    privmsg_builder
+      .tags(tags_builder.finish())
+      .finish_privmsg()
+      .map_err(|_| self)
+  }
+}
+
+fn connect_sqlite(path: &mut EkbConfigDirs) -> Result<Connection, rusqlite::Error> {
+  if path.data.is_file() { path.data.pop(); }
+  path.data.push("emotes.db3");
+  let db = Connection::open(&mut path.data)?;
   if let Ok(false) = db.table_exists(None, "emotes") {
     db.execute(
       "CREATE TABLE emotes (
@@ -182,7 +218,7 @@ async fn connect_twitch_client(conf: &EkbTwitchConfig) -> Result<irc::client::Cl
 }
 
 #[allow(clippy::needless_return)] // 'return' statements make the intention more obvious.
-pub async fn get_or_create_config_emojikanban() -> Result<(PathBuf, EkbTwitchConfig), String> {
+pub async fn get_or_create_config_emojikanban() -> Result<(EkbConfigDirs, EkbTwitchConfig), String> {
   let app_name = Some("emojikanban");
   let config_file = "config.kdl";
   let config_kdl = 
@@ -191,59 +227,53 @@ channel     streamer-name                  // <- and 'streamer-name' with the st
 oauth       g0Bble0dEE0GukK0enCryPTIon0KEy // <- With or without "oauth:" prefix
 // The oauth should be generated from the account you use
 // as the 'bot-account'. If you use your streamer account,
-// you should be able to use the same account name for 
-// 'bot-account' and 'channel', but I don't know for sure.
-// 'channel' is only used to select the irc channel to 
+// you can use the same account name for 'bot-account' and
+// 'channel'. 'channel' is only used to select the irc channel to 
 // monitor for emotes, and eventually for chat.
-// 
-// !!! This is not a real .kdl file. !!! The parser expects 
-// bot-account on the first line, channel on the second line, 
-// and oauth on the third line, each followed by whitespace 
-// then by a string of non-space characters as the value. 
-// Any whitespace after the value marks the beginning of a
-// comment till the end of the line such that text on the 
-// same line after the value is ignored. The '//' are there 
-// for decoration, even in this block because parsing stops 
-// after the oauth line's value.
-// 
-// key    value   This text is ignored with or without '//'
 // 
 "#;
   if let Some(app_dirs) = AppDirs::new(app_name, true) {
-    let mut path = app_dirs.config_dir;
-    if let Err(e) = std::fs::create_dir_all(&path) {
-      let error = format!("Failed to create config dir: {}\nError: {}", path.display(), e);
+    let mut config_path = app_dirs.config_dir;
+    if let Err(e) = std::fs::create_dir_all(&config_path) {
+      let error = format!("Failed to create config dir: {}\nError: {}", config_path.display(), e);
       // log::error!("{}", error);
       return Err(error);
     }
-    path.push(config_file);
-    match std::fs::exists(&path) {
+    config_path.push(config_file);
+    // let mut cache_path = app_dirs.cache_dir;
+    let data_path = app_dirs.data_dir;
+    if let Err(e) = std::fs::create_dir_all(&data_path) {
+      let error = format!("Failed to create data dir: {}\nError: {}", data_path.display(), e);
+      // log::error!("{}", error);
+      return Err(error);
+    }
+    match std::fs::exists(&config_path) {
       Err(e)    => {
-        let error = format!("Failed to check existence of config file: {}\nError: {}", path.display(), e);
+        let error = format!("Failed to check existence of config file: {}\nError: {}", config_path.display(), e);
         // log::error!("{}", error);
         return Err(error);
       }
       Ok(false) => {
-        if let Err(e) = std::fs::write(&path, config_kdl) {
-          let error = format!("Failed to write default config file: {}\nError: {}", path.display(), e);
+        if let Err(e) = std::fs::write(&config_path, config_kdl) {
+          let error = format!("Failed to write default config file: {}\nError: {}", config_path.display(), e);
           // log::error!("{}", error);
           return Err(error);
         } else {
-          let error = format!("Default config.kdl created at {}", path.display());
+          let error = format!("Default config.kdl created at {}", config_path.display());
           // log::info!("{}", error);
           return Err(error);
         }
       }
       Ok(true)  => {
         // The file exists, now we need to validate it
-        match std::fs::read_to_string(&path) { 
+        match std::fs::read_to_string(&config_path) { 
           Err(e) => {
-            let error = format!("File exists but failed to read: {}\nError: {}", path.display(), e);
+            let error = format!("File exists but failed to read: {}\nError: {}", config_path.display(), e);
             // log::error!("{}", error);
             return Err(error);
           }
           Ok(conf) => {
-            return validate_config(path, conf).await;
+            return validate_config(config_path, data_path, conf).await;
           }
         }
       }
@@ -256,7 +286,7 @@ oauth       g0Bble0dEE0GukK0enCryPTIon0KEy // <- With or without "oauth:" prefix
 }
 
 #[allow(clippy::needless_return)]
-async fn validate_config(mut config_path: PathBuf, conf: String) -> Result<(PathBuf, EkbTwitchConfig), String> {
+async fn validate_config(mut config_path: PathBuf, data_path: PathBuf, conf: String) -> Result<(EkbConfigDirs, EkbTwitchConfig), String> {
   let conf = &conf;
   let doc: Result<KdlDocument, KdlError> = conf.parse();
   match doc {
@@ -290,7 +320,7 @@ async fn validate_config(mut config_path: PathBuf, conf: String) -> Result<(Path
                 .expect("Failure awaiting client.get_channel_from_login for streamer channel.");
               if bot_valid.is_some() && chn_valid.is_some() {
                 config_path.pop();
-                return Ok((config_path, conf));
+                return Ok((EkbConfigDirs{ config: config_path, data: data_path}, conf));
               } else {
                 let error = format!(
                   "OAUTH Token valid, but either the bot_username or the channel is invalid in: {}\nbot-account: {} {:?}\nchannel: {} {:?}",

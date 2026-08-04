@@ -4,7 +4,14 @@ use {
     // KdlEntry,
     KdlValue,
   },
+  std::path::PathBuf,
 };
+
+#[derive(Debug)]
+pub struct EkbConfigDirs {
+  pub config: PathBuf,
+  pub data:   PathBuf,
+}
 
 #[derive(Debug)]
 pub struct EkbTwitchConfig {
@@ -81,6 +88,7 @@ impl EkbTwitchValues for KdlDocument {
   }
 }
 
+#[allow(dead_code)]
 pub trait EkbYouTubeValues {
   fn youtube(&self) -> Option<&KdlDocument>;
   fn channel_id(&self) -> Option<String>;
