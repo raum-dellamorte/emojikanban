@@ -14,6 +14,7 @@ crate-type = ["cdylib", "lib"]
 
 [dependencies]
 anyhow = "1.0.100"
+brainrot = "0.3.0"
 enterpolation = "0.3.0"
 env_logger = "0.11.8"
 futures = "0.3.31"
@@ -32,4 +33,3 @@ rusqlite = { version = "0.40.1", features = ["bundled"] } # "0.40.1"
 tokio = { version = "1.49.0", features = ["rt", "rt-multi-thread", "macros", "net", "time"] }
 twitch_api = { version = "0.8.0", features = ["helix", "reqwest"] }
 twitch_message = "0.1.2"
-youtube_chat = "0.2.2"
