@@ -4,7 +4,14 @@ use {
     // KdlEntry,
     KdlValue,
   },
+  std::path::PathBuf,
 };
+
+#[derive(Debug)]
+pub struct EkbConfigDirs {
+  pub config: PathBuf,
+  pub data:   PathBuf,
+}
 
 #[derive(Debug)]
 pub struct EkbTwitchConfig {

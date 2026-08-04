@@ -18,6 +18,8 @@ About The Name
 Status:
 =======
 
+Now with FlatPak support!
+
 __Effects:__
 - [x] Gravity: 70% : Emote spawns at the top of the screen, falls, and bounces with a life between 2 and 5 seconds.
 - [x] InchWorm: 20% : Emote spawns at the center as 9 segments that move in a random direction in an inchworm inspired fashion till offscreen.
@@ -38,7 +40,7 @@ __Planned features__ other than effects:
 
 __Now cross-platform!__ (Minimal testing on Windows. Using `platform_dirs` crate. Should *just work*...)
 
-Emotes are cached in a local sqlite database located in `[*nix: ~/.config | win: %APPDATA% ]/emojikanban/emotes.db3` (untested on Windows) so that they are only downloaded once.
+Emotes are cached in a local sqlite database located in `[*nix: ~/.local/share | flatpak: ~/.var/app/com.obsproject.Studio/data | win: %APPDATA% ]/emojikanban/emotes.db3` (untested on Windows) so that they are only downloaded once.
 
 Use at your own risk :) Rust does not prevent errors in logic. The crate I use to make this an OBS plugin is **Archived** since 2025 which may prove to be a problem in the near future.
 
@@ -63,7 +65,7 @@ Basic Instructions:
 Config
 ======
 
-After first run, edit `[*nix: ~/.config | win: %APPDATA% ]/emojikanban/config.kdl`:
+After first run, edit `[*nix: ~/.config | flatpak: ~/.var/app/com.obsproject.Studio/config | win: %APPDATA% ]/emojikanban/config.kdl`:
 ```kdl
 bot-account bot-name                       // <- Replace 'bot-name' with the name of the account used to monitor chat
 channel     streamer-name                  // <- and 'streamer-name' with the streamer, most likely your own
