@@ -87,11 +87,7 @@ impl Module for EKBModule {
 
 obs_register_module!(EKBModule);
 
-pub async fn run(tx: UnboundedSender<EmoteData>) -> Result<(), anyhow::Error> {
-  let (mut ekb_conf_dirs, conf) = match get_or_create_config_emojikanban().await {
-    Err(e) => { return Err(anyhow::format_err!("{}", e)); }
-    Ok(res) => { res }
-  };
+pub async fn start_twitch_monitor(mut ekb_conf_dirs: EkbConfigDirs, conf: EkbTwitchConfig, tx: UnboundedSender<EmoteData>) -> Result<(), anyhow::Error> {
   let emotes = connect_sqlite(&mut ekb_conf_dirs)?;
   let mut client = connect_twitch_client(&conf).await?;
   let mut stream = client.stream()?;
@@ -222,7 +218,7 @@ async fn connect_twitch_client(conf: &EkbTwitchConfig) -> Result<irc::client::Cl
 }
 
 #[allow(clippy::needless_return)] // 'return' statements make the intention more obvious.
-pub async fn get_or_create_config_emojikanban() -> Result<(EkbConfigDirs, EkbTwitchConfig), String> {
+pub async fn get_or_create_config_emojikanban(oauth: Option<String>) -> Result<(EkbConfigDirs, EkbTwitchConfig), String> {
   let app_name = Some("emojikanban");
   let config_file = "config.kdl";
   let config_kdl = 
@@ -277,7 +273,7 @@ oauth       g0Bble0dEE0GukK0enCryPTIon0KEy // <- With or without "oauth:" prefix
             return Err(error);
           }
           Ok(conf) => {
-            return validate_config(config_path, data_path, conf).await;
+            return validate_config(config_path, data_path, conf, oauth).await;
           }
         }
       }
@@ -289,8 +285,8 @@ oauth       g0Bble0dEE0GukK0enCryPTIon0KEy // <- With or without "oauth:" prefix
   }
 }
 
-#[allow(clippy::needless_return)]
-async fn validate_config(mut config_path: PathBuf, data_path: PathBuf, conf: String) -> Result<(EkbConfigDirs, EkbTwitchConfig), String> {
+#[allow(clippy::needless_return, unused)]
+async fn validate_config(mut config_path: PathBuf, data_path: PathBuf, conf: String, updated_oauth: Option<String>) -> Result<(EkbConfigDirs, EkbTwitchConfig), String> {
   let conf = &conf;
   let doc: Result<KdlDocument, KdlError> = conf.parse();
   match doc {
