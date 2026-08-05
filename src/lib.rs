@@ -9,7 +9,6 @@ use {
   kdl::{
     KdlDocument,
     KdlError,
-    // KdlValue,
   },
   obs_wrapper::{
     module::{
@@ -33,16 +32,8 @@ use {
     twitch_oauth2::{
       AccessToken, 
       UserToken, 
-    }
+    },
   },
-  // twitch_message::{
-  //   // IntoStatic,
-  //   messages::{
-  //     Message as TwitchMsg,
-  //     MessageKind,
-  //     Privmsg,
-  //   },
-  // },
 };
 
 mod config_kdl;
@@ -266,16 +257,10 @@ oauth       g0Bble0dEE0GukK0enCryPTIon0KEy // <- With or without "oauth:" prefix
       }
       Ok(true)  => {
         // The file exists, now we need to validate it
-        match std::fs::read_to_string(&config_path) { 
-          Err(e) => {
-            let error = format!("File exists but failed to read: {}\nError: {}", config_path.display(), e);
-            // log::error!("{}", error);
-            return Err(error);
-          }
-          Ok(conf) => {
-            return validate_config(config_path, data_path, conf, oauth).await;
-          }
-        }
+        let conf = std::fs::read_to_string(&config_path).map_err(|e| { 
+          format!("File exists but failed to read: {}\nError: {}", config_path.display(), e)
+        })?;
+        return validate_config(config_path, data_path, conf, oauth).await;
       }
     }
   } else {
@@ -287,17 +272,26 @@ oauth       g0Bble0dEE0GukK0enCryPTIon0KEy // <- With or without "oauth:" prefix
 
 #[allow(clippy::needless_return, unused)]
 async fn validate_config(mut config_path: PathBuf, data_path: PathBuf, conf: String, updated_oauth: Option<String>) -> Result<(EkbConfigDirs, EkbTwitchConfig), String> {
-  let conf = &conf;
-  let doc: Result<KdlDocument, KdlError> = conf.parse();
-  match doc {
+  let mut doc_res: Result<KdlDocument, KdlError> = conf.parse();
+  match doc_res {
     Err(e) => {
       let error = format!("Failed to parse {}\nError: {}", config_path.display(), e);
       log::error!("{}", error);
       return Err(error);
     }
-    Ok(conf) => {
+    Ok(mut doc) => {
+      if let Some(new_oauth) = updated_oauth {
+        let oauth_update_error = doc.oauth_update(&new_oauth);
+        if oauth_update_error.is_ok() {
+          if let Err(e) = std::fs::write(&config_path, doc.to_string()) {
+            log::error!("Failed to write new oauth token to {}\nKey will not be retained after this session.\nError: {}", config_path.display(), e);
+          }
+        } else {
+          log::error!("oauth_update_error: {}", oauth_update_error.err().unwrap());
+        }
+      }
       let client: HelixClient<reqwest::Client> = HelixClient::default();
-      match EkbTwitchConfig::try_from(conf) {
+      match EkbTwitchConfig::try_from(doc) {
         Err(e) => {
           let error = format!("Failed to parse {}\nError: {}", config_path.display(), e);
           log::error!("{}", error);

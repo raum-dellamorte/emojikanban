@@ -46,6 +46,7 @@ pub trait EkbTwitchValues {
   fn bot_account(&self) -> Result<String, String>;
   fn channel(&self) -> Result<String, String>;
   fn oauth(&self) -> Result<String, String>;
+  fn oauth_update(&mut self, new_oauth: &str) -> Result<(),String>;
 }
 
 #[allow(clippy::needless_return)]
@@ -82,6 +83,20 @@ impl EkbTwitchValues for KdlDocument {
         match entry.value() {
           KdlValue::String(val) => { Ok(val.to_owned()) }
           e => { return Err(format!("oauth node first entry should be the oauth access token as a string. Found {:?}", e)); }
+        }
+      } else { return Err("oauth node has no fields".to_owned()); }
+    } else { return Err("oauth node not present".to_owned()); }
+  }
+  fn oauth_update(&mut self, new_oauth: &str) -> Result<(),String> {
+    if let Some(node) = self.get_mut("oauth") {
+      if let Some(entry) = node.entry_mut(0) {
+        entry.set_value(new_oauth);
+        let value_repr = entry.value().to_string();
+        if let Some(format) = entry.format_mut() {
+          format.value_repr = value_repr;
+          Ok(())
+        } else {
+          return Err("internal entry updated but the string format representation was not. entry.format_mut() did not return Some(format)".to_owned())
         }
       } else { return Err("oauth node has no fields".to_owned()); }
     } else { return Err("oauth node not present".to_owned()); }
