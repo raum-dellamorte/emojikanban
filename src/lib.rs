@@ -36,7 +36,7 @@ use {
   },
 };
 
-mod config_kdl;
+pub mod config_kdl;
 pub mod effects;
 pub mod plugin;
 
