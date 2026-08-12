@@ -84,11 +84,14 @@ cd emojikanban
 
 Linux Installation Copy/Pasta:
 - built via `lin_build.sh` or `cargo build -r --target x86_64-unknown-linux-gnu`:
-  - symlink: `sudo ln -s $(pwd)/target/x86_64-unknown-linux-gnu/release/libemojikanban.so /usr/lib/obs-plugins/`
-  - copy:    `sudo cp $(pwd)/target/x86_64-unknown-linux-gnu/release/libemojikanban.so /usr/lib/obs-plugins/`
-- built via `cargo build -r`:
-  - symlink: `sudo ln -s $(pwd)/target/release/libemojikanban.so /usr/lib/obs-plugins/`
-  - copy:    `sudo cp $(pwd)/target/release/libemojikanban.so /usr/lib/obs-plugins/`
+  - Flatpak OBS:
+    - 1st:     `mkdir -p ~/.var/app/com.obsproject.Studio/config/obs-studio/plugins/emojikanban/bin/64bit/`
+    - symlink: `ln -s $(pwd)/target/x86_64-unknown-linux-gnu/release/libemojikanban.so ~/.var/app/com.obsproject.Studio/config/obs-studio/plugins/emojikanban/bin/64bit/`
+    - copy:    `cp $(pwd)/target/x86_64-unknown-linux-gnu/release/libemojikanban.so ~/.var/app/com.obsproject.Studio/config/obs-studio/plugins/emojikanban/bin/64bit/`
+  - Native OBS:
+    - symlink: `sudo ln -s $(pwd)/target/x86_64-unknown-linux-gnu/release/libemojikanban.so /usr/lib/obs-plugins/`
+    - copy:    `sudo cp $(pwd)/target/x86_64-unknown-linux-gnu/release/libemojikanban.so /usr/lib/obs-plugins/`
+- built via `cargo build -r`, substitute `$(pwd)/target/x86_64-unknown-linux-gnu/release/libemojikanban.so` with `$(pwd)/target/release/libemojikanban.so`
 
 Build on Windows (requires Visual Studio Build Tools 2022 and LLVM):
 ```bash
