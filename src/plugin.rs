@@ -1,11 +1,14 @@
 use {
   crate::{
+    EmoteComEnum, EmoteData,
     config_kdl::{
-      EkbConfigDirs, EkbTwitchConfig, 
+      EkbConfigDirs, EkbTwitchConfig,
+      serve_oauth_receiver,
     },
     effects::*,
-    EmoteData,
-    EmoteComEnum,
+    plugin::TwitchOAuthRcvr::{
+      Error, OAuthToken,
+    },
   },
   image::{
     AnimationDecoder,
@@ -30,7 +33,6 @@ use {
   rand::prelude::*,
   std::collections::VecDeque,
   tokio::{
-    task::JoinHandle,
     runtime::Runtime,
     sync::mpsc::{
       UnboundedReceiver,UnboundedSender,
@@ -38,29 +40,17 @@ use {
   }, 
 };
 
-#[allow(dead_code)]
-enum TwitchConnectionStatus {
-  AuthenticateTwitch,
-  Connected(
-    EkbConfigDirs, EkbTwitchConfig,
-  ),
-  FailedToConnect(anyhow::Error),
+enum TwitchOAuthRcvr {
+  OAuthToken(String),
+  Error(anyhow::Error),
 }
-
-// enum TwitchStatus {
-//   Connected,
-//   Disconnected,
-// }
 
 pub struct EmojiKanBan {
   id: usize,
-  #[allow(dead_code)]
+  // #[allow(dead_code)]
   runtime: Option<Runtime>,
-  cmd_tx: Option<UnboundedSender<TwitchConnectionStatus>>,
-  cmd_rx: Option<UnboundedReceiver<TwitchConnectionStatus>>,
-  #[allow(dead_code)]
-  twitch_monitor: Option<JoinHandle<()>>,
-  // twitch_status: TwitchStatus,
+  oauth_tx: Option<UnboundedSender<TwitchOAuthRcvr>>,
+  oauth_rx: Option<UnboundedReceiver<TwitchOAuthRcvr>>,
   emote_rx: Option<UnboundedReceiver<EmoteComEnum>>, // EmoteData -> anyhow::Result<EmoteData, String> to return error to try to reconnect to Twitch
   emote_queue: VecDeque<EmoteOBS>,
   emote_queue_max_length: u32,
@@ -111,9 +101,8 @@ impl Sourceable for EmojiKanBan {
     let mut ekb = Self {
       id: source.id(),
       runtime: None,
-      cmd_tx: None,
-      cmd_rx: None,
-      twitch_monitor: None,
+      oauth_tx: None,
+      oauth_rx: None,
       emote_rx: None,
       emote_queue: vec![].into(),
       emote_queue_max_length,
@@ -123,21 +112,21 @@ impl Sourceable for EmojiKanBan {
       screen_offset_x,
       screen_offset_y,
     };
-    ekb.connect_twitch();
+    ekb.connect_twitch(None);
     ekb
   }
 }
 
 impl EmojiKanBan {
-  pub fn connect_twitch(&mut self) {
+  pub fn connect_twitch(&mut self, oauth: Option<String>) {
     if let Some(runtime) = self.runtime.as_mut() {
       let ekbc: anyhow::Result<(EkbConfigDirs, EkbTwitchConfig),String> = runtime.block_on(async {
-        crate::get_or_create_config_emojikanban(None).await
+        crate::get_or_create_config_emojikanban(oauth).await
       });
       if let Ok((ekb_config_dirs, conf)) = ekbc {
-        if let Some(mut rx) = self.cmd_rx.take() {
+        if let Some(mut rx) = self.oauth_rx.take() {
           rx.close();
-          _ = self.cmd_tx.take();
+          _ = self.oauth_tx.take();
           while rx.blocking_recv().is_some() {}
         }
         if let Some(mut rx) = self.emote_rx.take() {
@@ -149,13 +138,13 @@ impl EmojiKanBan {
         runtime.spawn(async move {
           crate::start_twitch_monitor(ekb_config_dirs, conf, emote_tx).await;
         });
-        self.cmd_tx = Some(cmd_tx);
-        self.cmd_rx = Some(cmd_rx);
+        self.oauth_tx = Some(cmd_tx);
+        self.oauth_rx = Some(cmd_rx);
         self.emote_rx = Some(emote_rx);
       }
     } else {
       self.runtime = Some(tokio::runtime::Runtime::new().unwrap());
-      self.connect_twitch();
+      self.connect_twitch(oauth);
     }
   }
 } // impl EmojiKanBan
@@ -184,14 +173,25 @@ impl GetHeightSource for EmojiKanBan {
 impl GetPropertiesSource for EmojiKanBan {
   fn get_properties(&mut self) -> Properties {
     let mut props = Properties::new();
-    props
-      .add_button(
+    if let Some(ref tx) = self.oauth_tx {
+      let oauth_tx = tx.clone();
+      props.add_button(
         "twitch_authenticate".into(),
         "Connect Twitch".into(),
         move || {
-          // something
+          log::info!("EmojiKanBan attempting to (re)authenticate Twitch for access to chat. Server starting on http://localhost:3000/");
+          match serve_oauth_receiver() {
+            Ok(oauth) => {
+              _ = oauth_tx.send(TwitchOAuthRcvr::OAuthToken(oauth));
+            }
+            Err(e) => {
+              _ = oauth_tx.send(TwitchOAuthRcvr::Error(e.into()));
+            }
+          }
         },
-      )
+      );
+    };
+    props
       .add(
         obs_string!("emotes_max"), 
         obs_string!("Cap the number of emotes to draw."), 
@@ -249,18 +249,30 @@ impl VideoTickSource for EmojiKanBan {
     let data: &mut EmojiKanBan = self;
     let w = data.screen_w as f32;
     let h = data.screen_h as f32;
+    let mut oauth = None;
+    if let Some(rx) = data.oauth_rx.as_mut() {
+      while let Ok(res) = rx.try_recv() {
+        match res {
+          OAuthToken(token) => { oauth = Some(token); }
+          Error(e) => { log::error!("{}", e); }
+        }
+      }
+    }
+    if oauth.is_some() {
+      data.connect_twitch(oauth); // This should somehow be handled by the button, maybe?
+    }
     if let Some(rx) = data.emote_rx.as_mut() {
       while let Ok(emote_data) = rx.try_recv() {
         if (data.emote_queue.len() as u32) < data.emote_queue_max_length {
           let emote_data = match emote_data {
             EmoteComEnum::Data(emote_data) => { emote_data }
-            EmoteComEnum::TwitchConnectionFailure(_e) => {
-              // set status to not connected or something
-              return;
+            EmoteComEnum::TwitchConnectionFailure(e) => {
+              log::error!("Twitch Connection Failure: {}", e.as_ref().as_ref().unwrap_err());
+              continue;
             }
-            EmoteComEnum::SqliteConnectionFailure(_e) => {
-              // like, let somebody know, you know?
-              return;
+            EmoteComEnum::SqliteConnectionFailure(e) => {
+              log::error!("Sqlite Connection Failure: {}", e.as_ref().as_ref().unwrap_err());
+              continue;
             }
           };
           let mut emote: EmoteOBS = emote_data.into();

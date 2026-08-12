@@ -109,21 +109,26 @@ impl EkbTwitchValues for KdlDocument {
 
 pub const TWITCH_AUTH_URL: &str = "https://id.twitch.tv/oauth2/authorize?response_type=token&client_id=m0kk7y5gjs9qjfio2pw7hkw8iwaeft&redirect_uri=http://localhost:3000&scope=chat%3Aedit%20chat%3Aread";
 
-const CALLBACK_PAGE: &str = r#"<!doctype html>
+pub const CALLBACK_PAGE: &str = r#"<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8">
     <title>emojikanban Twitch authentication</title>
   </head>
   <body>
-    <p id="status">Finishing Twitch authentication…</p>
+    <p id="status_1" style="text-align: center; font-size: clamp(2rem, 5vw, 3rem);">
+      Use this
+      <a href="https://id.twitch.tv/oauth2/authorize?response_type=token&client_id=m0kk7y5gjs9qjfio2pw7hkw8iwaeft&redirect_uri=http://localhost:3000&scope=chat%3Aedit%20chat%3Aread">link</a>
+      to authorize EmojiKanBan with Twitch.
+    </p>
+    <p id="status_2" style="text-align: center; font-size: clamp(1rem, 2vw, 2rem);">Awaiting Twitch authentication…</p>
     <script>
-      const status = document.getElementById("status");
+      const status1 = document.getElementById("status_1");
+      const status2 = document.getElementById("status_2");
       const fragment = new URLSearchParams(window.location.hash.slice(1));
       const token = fragment.get("access_token");
-
       if (token === null) {
-        status.textContent = "Twitch did not return an access token. You may close this window.";
+        status2.textContent = "Awaiting Twitch authentication…";
       } else {
         fetch("/token", {
           method: "POST",
@@ -131,10 +136,11 @@ const CALLBACK_PAGE: &str = r#"<!doctype html>
           body: token,
         }).then(response => {
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
-          status.textContent = "Authentication received. You may close this window.";
+          status1.textContent = "Authentication received.";
+          status2.textContent = "You may close this window.";
           history.replaceState(null, "", "/");
         }).catch(error => {
-          status.textContent = `Failed to send authentication to emojikanban: ${error}`;
+          status2.textContent = `Failed to send authentication to emojikanban: ${error}`;
         });
       }
     </script>
