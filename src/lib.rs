@@ -25,7 +25,10 @@ use {
     Connection, 
     params,
   },
-  std::path::PathBuf,
+  std::{
+    path::PathBuf,
+    sync::Arc,
+  },
   tokio::sync::mpsc::UnboundedSender,
   twitch_api::{
     helix::HelixClient, 
@@ -78,11 +81,32 @@ impl Module for EKBModule {
 
 obs_register_module!(EKBModule);
 
-pub async fn start_twitch_monitor(mut ekb_conf_dirs: EkbConfigDirs, conf: EkbTwitchConfig, tx: UnboundedSender<EmoteData>) -> Result<(), anyhow::Error> {
-  let emotes = connect_sqlite(&mut ekb_conf_dirs)?;
-  let mut client = connect_twitch_client(&conf).await?;
-  let mut stream = client.stream()?;
-  while let Some(irc_response) = stream.next().await.transpose()? {
+pub async fn start_twitch_monitor(mut ekb_conf_dirs: EkbConfigDirs, conf: EkbTwitchConfig, tx: UnboundedSender<EmoteComEnum>) {
+  let emotes = match connect_sqlite(&mut ekb_conf_dirs) {
+    Ok(emotes) => emotes,
+    Err(e) => {
+      _ = tx.send(EmoteComEnum::SqliteConnectionFailure(Arc::new(Err(e.into()))));
+      return;
+    }
+  };
+  let mut client = match connect_twitch_client(&conf).await {
+    Ok(client) => { client }
+    Err(e) => {
+      _ = tx.send(EmoteComEnum::TwitchConnectionFailure(Arc::new(Err(e.into()))));
+      return;
+    }
+  };
+  let mut stream = match client.stream() {
+    Ok(client) => { client }
+    Err(e) => {
+      _ = tx.send(EmoteComEnum::TwitchConnectionFailure(Arc::new(Err(e.into()))));
+      return;
+    }
+  };
+  while let Some(irc_response) = stream.next().await.transpose().unwrap_or_else(|e| {
+    _ = tx.send(EmoteComEnum::TwitchConnectionFailure(Arc::new(Err(e.into()))));
+    None
+  }) {
     match irc_response.to_twitch_message_privmsg() {
       Err(_msg) => {
         // Do something with this?
@@ -133,12 +157,11 @@ pub async fn start_twitch_monitor(mut ekb_conf_dirs: EkbConfigDirs, conf: EkbTwi
             log::info!("Loaded emote id {} from URI", emote.id);
             emote_data
           };
-          let _ = tx.send(emote_data);
+          let _ = tx.send(EmoteComEnum::Data(emote_data));
         }
       }
     }
   }
-  Ok(())
 }
 
 trait ToTwitchMessagePrivmsg: Sized {
@@ -329,5 +352,19 @@ async fn validate_config(mut config_path: PathBuf, data_path: PathBuf, conf: Str
       }
     }
   }
+}
+
+#[derive(Clone)]
+pub struct EmoteData {
+  pub id: String,
+  pub name: String,
+  pub img: Vec<u8>,
+}
+
+#[derive(Clone)]
+pub enum EmoteComEnum {
+  Data(EmoteData),
+  SqliteConnectionFailure(Arc<anyhow::Result<(),anyhow::Error>>),
+  TwitchConnectionFailure(Arc<anyhow::Result<(),anyhow::Error>>),
 }
 

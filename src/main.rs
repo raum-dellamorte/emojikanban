@@ -35,14 +35,25 @@ fn main() -> Result<(), anyhow::Error> {
     }
   })?;
   
-  let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<emojikanban::plugin::EmoteData>();
+  let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<emojikanban::EmoteComEnum>();
   runtime.spawn(async move {
-    if let Err(e) = emojikanban::start_twitch_monitor(ekb_config_dirs, conf, tx).await {
-      log::error!("Twitch monitor died: {}", e);
-    };
+    emojikanban::start_twitch_monitor(ekb_config_dirs, conf, tx).await;
   });
   while let Some(emote_data) = rx.blocking_recv() {
-    println!("Emote :{}: used.", emote_data.name);
+    match emote_data {
+      emojikanban::EmoteComEnum::Data(emote_data) => {
+        println!("Emote :{}: used.", emote_data.name);
+      }
+      emojikanban::EmoteComEnum::SqliteConnectionFailure(e) => {
+        // let e = e.clone();
+        // let err = e.as_ref();
+        // let error = e.as_ref().as_ref().unwrap_err();
+        log::error!("Failed to connect Sqlite: {}", e.as_ref().as_ref().unwrap_err());
+      }
+      emojikanban::EmoteComEnum::TwitchConnectionFailure(e) => {
+        log::error!("Twitch monitor died: {}", e.as_ref().as_ref().unwrap_err());
+      }
+    }
   }
   
   Ok(())

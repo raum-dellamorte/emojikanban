@@ -1,5 +1,12 @@
 use {
-  crate::effects::*,
+  crate::{
+    config_kdl::{
+      EkbConfigDirs, EkbTwitchConfig, 
+    },
+    effects::*,
+    EmoteData,
+    EmoteComEnum,
+  },
   image::{
     AnimationDecoder,
     DynamicImage,
@@ -19,20 +26,42 @@ use {
     prelude::*, 
     properties::*, 
     source::*,
-  }, 
-  rand::prelude::*, 
+  },
+  rand::prelude::*,
   std::collections::VecDeque,
   tokio::{
+    task::JoinHandle,
     runtime::Runtime,
-    sync::mpsc::UnboundedReceiver,
+    sync::mpsc::{
+      UnboundedReceiver,UnboundedSender,
+    },
   }, 
 };
+
+#[allow(dead_code)]
+enum TwitchConnectionStatus {
+  AuthenticateTwitch,
+  Connected(
+    EkbConfigDirs, EkbTwitchConfig,
+  ),
+  FailedToConnect(anyhow::Error),
+}
+
+// enum TwitchStatus {
+//   Connected,
+//   Disconnected,
+// }
 
 pub struct EmojiKanBan {
   id: usize,
   #[allow(dead_code)]
   runtime: Option<Runtime>,
-  rx: UnboundedReceiver<EmoteData>, 
+  cmd_tx: Option<UnboundedSender<TwitchConnectionStatus>>,
+  cmd_rx: Option<UnboundedReceiver<TwitchConnectionStatus>>,
+  #[allow(dead_code)]
+  twitch_monitor: Option<JoinHandle<()>>,
+  // twitch_status: TwitchStatus,
+  emote_rx: Option<UnboundedReceiver<EmoteComEnum>>, // EmoteData -> anyhow::Result<EmoteData, String> to return error to try to reconnect to Twitch
   emote_queue: VecDeque<EmoteOBS>,
   emote_queue_max_length: u32,
   rng: ThreadRng,
@@ -44,8 +73,10 @@ pub struct EmojiKanBan {
 
 impl Drop for EmojiKanBan {
   fn drop(&mut self) {
-    self.rx.close();
-    while self.rx.blocking_recv().is_some() {}
+    if let Some(mut rx) = self.emote_rx.take() {
+      rx.close();
+      while rx.blocking_recv().is_some() {}
+    }
     if let Some(runtime) = self.runtime.take() {
       runtime.shutdown_timeout(std::time::Duration::from_nanos(500));
       // runtime.shutdown_background();
@@ -67,20 +98,6 @@ impl Sourceable for EmojiKanBan {
     SourceType::Input
   }
   fn create(create: &mut CreatableSourceContext<Self>, mut source: SourceRef) -> Self {
-    let runtime = tokio::runtime::Runtime::new().unwrap();
-    let (ekb_config_dirs, conf) = runtime.block_on(async {
-      match crate::get_or_create_config_emojikanban(None).await {
-        Err(e) => { panic!("{}", e); } // Panic at the Failure
-        Ok(res) => { res }
-      }
-    });
-    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-    runtime.spawn(async move {
-      if let Err(e) = crate::start_twitch_monitor(ekb_config_dirs, conf, tx).await {
-        log::error!("Twitch monitor died: {}", e);
-      }
-    });
-    let runtime = Some(runtime);
     let settings = &mut create.settings;
     let emote_queue_max_length = settings.get(obs_string!("emotes_max")).unwrap_or(200);
     let screen_w = settings.get(obs_string!("screen_width")).unwrap_or(1920);
@@ -90,10 +107,13 @@ impl Sourceable for EmojiKanBan {
     
     source.update_source_settings(settings);
     
-    Self {
+    let mut ekb = Self {
       id: source.id(),
-      runtime,
-      rx,
+      runtime: None,
+      cmd_tx: None,
+      cmd_rx: None,
+      twitch_monitor: None,
+      emote_rx: None,
       emote_queue: vec![].into(),
       emote_queue_max_length,
       rng: rand::rng(),
@@ -101,9 +121,43 @@ impl Sourceable for EmojiKanBan {
       screen_h,
       screen_offset_x,
       screen_offset_y,
-    }
+    };
+    ekb.connect_twitch();
+    ekb
   }
 }
+
+impl EmojiKanBan {
+  pub fn connect_twitch(&mut self) {
+    if let Some(runtime) = self.runtime.as_mut() {
+      let ekbc: anyhow::Result<(EkbConfigDirs, EkbTwitchConfig),String> = runtime.block_on(async {
+        crate::get_or_create_config_emojikanban(None).await
+      });
+      if let Ok((ekb_config_dirs, conf)) = ekbc {
+        if let Some(mut rx) = self.cmd_rx.take() {
+          rx.close();
+          _ = self.cmd_tx.take();
+          while rx.blocking_recv().is_some() {}
+        }
+        if let Some(mut rx) = self.emote_rx.take() {
+          rx.close();
+          while rx.blocking_recv().is_some() {}
+        }
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (emote_tx, emote_rx) = tokio::sync::mpsc::unbounded_channel();
+        runtime.spawn(async move {
+          crate::start_twitch_monitor(ekb_config_dirs, conf, emote_tx).await;
+        });
+        self.cmd_tx = Some(cmd_tx);
+        self.cmd_rx = Some(cmd_rx);
+        self.emote_rx = Some(emote_rx);
+      }
+    } else {
+      self.runtime = Some(tokio::runtime::Runtime::new().unwrap());
+      self.connect_twitch();
+    }
+  }
+} // impl EmojiKanBan
 
 const GRAVITY: f32 = 1800.;
 const BOUNCE: f32 = 0.6;
@@ -130,6 +184,13 @@ impl GetPropertiesSource for EmojiKanBan {
   fn get_properties(&mut self) -> Properties {
     let mut props = Properties::new();
     props
+      .add_button(
+        "twitch_authenticate".into(),
+        "Connect Twitch".into(),
+        move || {
+          // something
+        },
+      )
       .add(
         obs_string!("emotes_max"), 
         obs_string!("Cap the number of emotes to draw."), 
@@ -187,40 +248,53 @@ impl VideoTickSource for EmojiKanBan {
     let data: &mut EmojiKanBan = self;
     let w = data.screen_w as f32;
     let h = data.screen_h as f32;
-    while let Ok(emote_data) = data.rx.try_recv() {
-      if (data.emote_queue.len() as u32) < data.emote_queue_max_length {
-        let mut emote: EmoteOBS = emote_data.into();
-        if emote.tex_vec.is_empty() || emote.frame >= emote.tex_vec.len() {
-          log::error!("tex_vec empty or current frame out of bounds: len: {} frame: {}", emote.tex_vec.len(), emote.frame);
-          continue;
+    if let Some(rx) = data.emote_rx.as_mut() {
+      while let Ok(emote_data) = rx.try_recv() {
+        if (data.emote_queue.len() as u32) < data.emote_queue_max_length {
+          let emote_data = match emote_data {
+            EmoteComEnum::Data(emote_data) => { emote_data }
+            EmoteComEnum::TwitchConnectionFailure(_e) => {
+              // set status to not connected or something
+              return;
+            }
+            EmoteComEnum::SqliteConnectionFailure(_e) => {
+              // like, let somebody know, you know?
+              return;
+            }
+          };
+          let mut emote: EmoteOBS = emote_data.into();
+          if emote.tex_vec.is_empty() || emote.frame >= emote.tex_vec.len() {
+            log::error!("tex_vec empty or current frame out of bounds: len: {} frame: {}", emote.tex_vec.len(), emote.frame);
+            continue;
+          }
+          let (ew, eh) = (emote.tex_vec[emote.frame].width() as f32, emote.tex_vec[emote.frame].height() as f32);
+          let picker = data.rng.random_range(1..=100);
+          emote.effect = Some(match picker {
+            1..=10 => {
+              SlideUpEffect::init(
+                w,h,ew,eh,
+                &mut data.rng,
+              )
+            }
+            11..=30 => {
+              InchWormEffect::init(
+                w, h, ew, eh,
+                &mut data.rng
+              )
+            }
+            31..=100 => {
+              GravityEffect::init(
+                w,h,ew,eh,
+                GRAVITY, BOUNCE,
+                &mut data.rng,
+              )
+            }
+            _ => { unreachable!() }
+          });
+          data.emote_queue.push_back(emote);
+        } else {
+          let _ = emote_data;
         }
-        let (ew, eh) = (emote.tex_vec[emote.frame].width() as f32, emote.tex_vec[emote.frame].height() as f32);
-        let picker = data.rng.random_range(1..=100);
-        emote.effect = Some(match picker {
-          1..=10 => {
-            SlideUpEffect::init(
-              w,h,ew,eh,
-              &mut data.rng,
-            )
-          }
-          11..=30 => {
-            InchWormEffect::init(
-              w, h, ew, eh,
-              &mut data.rng
-            )
-          }
-          31..=100 => {
-            GravityEffect::init(
-              w,h,ew,eh,
-              GRAVITY, BOUNCE,
-              &mut data.rng,
-            )
-          }
-          _ => { unreachable!() }
-        });
-        data.emote_queue.push_back(emote);
-      } else {
-        let _ = emote_data;
       }
     }
     // Animate emotes in queue
@@ -249,13 +323,6 @@ impl VideoRenderSource for EmojiKanBan {
       obs_leave_graphics();
     }
   }
-}
-
-#[derive(Clone)]
-pub struct EmoteData {
-  pub id: String,
-  pub name: String,
-  pub img: Vec<u8>,
 }
 
 pub struct EmoteOBS {
