@@ -98,6 +98,7 @@ impl Sourceable for EmojiKanBan {
     SourceType::Input
   }
   fn create(create: &mut CreatableSourceContext<Self>, mut source: SourceRef) -> Self {
+    log::info!("Creating EmojiKanBan Context");
     let settings = &mut create.settings;
     let emote_queue_max_length = settings.get(obs_string!("emotes_max")).unwrap_or(200);
     let screen_w = settings.get(obs_string!("screen_width")).unwrap_or(1920);

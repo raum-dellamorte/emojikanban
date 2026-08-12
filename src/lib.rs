@@ -49,6 +49,8 @@ struct EKBModule {
 
 impl Module for EKBModule {
   fn new(ctx: ModuleRef) -> Self {
+    // let _ = obs_wrapper::log::Logger::new().with_promote_debug(true).init();
+    let _ = obs_wrapper::log::Logger::new().init();
     Self { ctx }
   }
   fn get_ctx(&self) -> &ModuleRef {
