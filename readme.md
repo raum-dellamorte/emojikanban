@@ -47,25 +47,31 @@ Use at your own risk :) Rust does not prevent errors in logic. The crate I use t
 Basic Instructions:
 ===================
 
-- Add `emojikanban` as a source in your active scene after installing the plugin and ensuring that it's enabled. It generates a configuration file if it does not already exist and initializes it with dummy data to be replaced with your `oauth` credentials
-  - `[*nix: ~/.config | win: %APPDATA% ]/emojikanban/config.kdl`
-  - **DON'T** edit with `notepad.exe` as it may cause a failure to parse the file. Notepad++ or a code editor is recommended.
-    - This might be fixed... Untested
-  - The plugin needs three strings from the user:
-    - the `bot-account` (or streamer account) used to generate
-    - the chat `channel` you intend to monitor via IRC for emote usage (generally your streamer account)
-      - this may currently or will soon be optional
-    - and the `oauth` token
-  - The file is now parsed as [KDL](https://kdl.dev/), but removing a key or value still may cause a failure to parse. [WIP]
-- Instructions for acquiring the needed OAUTH token can be found below under "Need OAUTH?" heading
-  - If you got the token with your streamer account, use your streamer account for both `bot-account` and `channel` in `config.kdl`
-- Once `config.kdl` is filled out and saved, restart OBS Studio and it should connect to the IRC channel of your streamer chat
-- Single emotes with no text don't yet work so test either with multiple emotes in a line or an emote with some text. The more emotes, the more fun!
+- Add `emojikanban` as a source in your active scene after installing the plugin and ensuring that it's enabled.
+  - It will generate a configuration file if it does not already exist and initializes it with dummy data to be replaced with your `oauth` credentials
+    - `[*nix: ~/.config | flatpak: ~/.var/app/com.obsproject.Studio/config | win: %APPDATA% ]/emojikanban/config.kdl`
+      - Note: The file is now parsed as [KDL](https://kdl.dev/), but removing a key or value still may cause a failure to parse. [WIP]
+      - Probably **DON'T** edit with `notepad.exe` as it messes with line endings. Notepad++ or a code editor is recommended.
+        - This might be fixed... Untested
+    - After `bot-account` change `bot-name` to your bot or streamer account name
+    - After `channel` change `streamer-name` to the account you intend to monitor via IRC for emote usage (generally your streamer account)
+      - If you remove or comment out the `channel` line, it will default to
+    - The `oauth` line is now best handled within OBS in the emojikanban `Properties` window, though it can be acquired manually.
+- Once `config.kdl` contains your `bot-account` and `channel`, using the `Connect Twitch` button as described below should just work. If not, restart OBS
+- Connect to Twitch:
+  - Open the Properties for your `emojikanban` source.
+  - Click `Connect Twitch` button.
+  - Navigate to `http://localhost:3000` in your web browser. You may want to use a Private Window if you want to connect with your Bot account.
+  - You should see a page with a link to authorize EmojiKanBan. It's the same as the link in the **Need OAUTH?** section below.
+  - The server on `localhost:3000` will capture the authorization when complete, write the new OAuth token to `config.kdl` automatically, and terminate.
+
+Manual OAuth:
+- Instructions for manually acquiring the needed OAUTH token can be found below under **Need OAUTH?** section
 
 Config
 ======
 
-After first run, edit `[*nix: ~/.config | flatpak: ~/.var/app/com.obsproject.Studio/config | win: %APPDATA% ]/emojikanban/config.kdl`:
+The config.kdl file: `[*nix: ~/.config | flatpak: ~/.var/app/com.obsproject.Studio/config | win: %APPDATA% ]/emojikanban/config.kdl`:
 ```kdl
 bot-account bot-name                       // <- Replace 'bot-name' with the name of the account used to monitor chat
 channel     streamer-name                  // <- and 'streamer-name' with the streamer, most likely your own
@@ -140,8 +146,13 @@ Need OAUTH?
 The ~~TrustMeBro~~ Easy Method:
 -------------------------------
 
+Authorization has been simplified!
+See **Basic Instructions** above.
+
 [Authorize emojiKanban](https://id.twitch.tv/oauth2/authorize?response_type=token&client_id=m0kk7y5gjs9qjfio2pw7hkw8iwaeft&redirect_uri=http://localhost:3000&scope=chat%3Aedit%20chat%3Aread)
 
+Manual OAuth token aquisition:
+- Link: 
 - Open the link and sign in with your bot account, or streamer account if you want.
 
 - After you click Authorize, you're automatically redirected to a localhost address that doesn't exist. In the URL bar you'll see:
@@ -149,7 +160,7 @@ The ~~TrustMeBro~~ Easy Method:
   - The part between `...access_token=` and `&scope=...`  is your oauth token. Copy that into the config.kdl replacing `g0Bble0dEE0GukK0enCryPTIon0KEy`
   - Don't forget to replace `bot-name` and `streamer-name` appropriately. If using your streamer account as your bot account replace both with the streamer account name.
 
-Generating Your Own Private App Method:
+The Generating-Your-Own-Private-App Method:
 ---------------------------------------
 
 This is how I made the ~~TrustMeBro~~ Link above.
