@@ -43,14 +43,15 @@ pub mod config_kdl;
 pub mod effects;
 pub mod plugin;
 
+const PROMOTE_DEBUG_LOGS: bool = false;
+
 struct EKBModule {
   ctx: ModuleRef,
 }
 
 impl Module for EKBModule {
   fn new(ctx: ModuleRef) -> Self {
-    // let _ = obs_wrapper::log::Logger::new().with_promote_debug(true).init();
-    let _ = obs_wrapper::log::Logger::new().init();
+    let _ = obs_wrapper::log::Logger::new().with_promote_debug(PROMOTE_DEBUG_LOGS).init();
     Self { ctx }
   }
   fn get_ctx(&self) -> &ModuleRef {
