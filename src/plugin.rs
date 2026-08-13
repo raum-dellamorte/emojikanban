@@ -79,31 +79,18 @@ pub struct EmojiKanBan {
 
 impl Drop for EmojiKanBan {
   fn drop(&mut self) {
-    if let Some(mut rx) = self.oauth_rx.take() {
-      rx.close();
-      _ = self.oauth_tx.take();
-      while rx.blocking_recv().is_some() {}
-    }
-    if let Some(mut rx) = self.emote_rx.take() {
-      rx.close();
-      while rx.blocking_recv().is_some() {}
-    }
     if let Some(handle) = self.config_handle.take() {
       handle.abort();
     }
     if let Some(handle) = self.twitch_handle.take() {
       handle.abort();
     }
+    self.oauth_rx.take();
+    self.oauth_tx.take();
+    self.emote_rx.take();
     if let Some(runtime) = self.runtime.take() {
-      runtime.shutdown_timeout(std::time::Duration::from_nanos(500));
-      // runtime.shutdown_background();
+      runtime.shutdown_timeout(std::time::Duration::from_millis(100));
     }
-    // unsafe {
-    //   let source: *mut u8 = self.id as *mut u8;
-    //   let source = source as *mut obs_source;
-    //   obs_wrapper::obs_sys::obs_source_remove(source);
-    //   // obs_wrapper::obs_sys::obs_source_release(source);
-    // }
   }
 }
 
