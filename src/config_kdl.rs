@@ -11,6 +11,13 @@ use {
   },
 };
 
+#[derive(Clone,Default)]
+pub struct EkbConfigUpdate {
+  pub oauth: Option<String>,
+  pub bot_account: Option<String>,
+  pub channel: Option<String>,
+}
+
 #[derive(Debug, Clone)]
 pub struct EkbConfigDirs {
   pub config: PathBuf,
@@ -50,6 +57,8 @@ pub trait EkbTwitchValues {
   fn bot_account(&self) -> Result<String, String>;
   fn channel(&self) -> Result<String, String>;
   fn oauth(&self) -> Result<String, String>;
+  fn bot_account_update(&mut self, new_oauth: &str) -> Result<(),String>;
+  fn channel_update(&mut self, new_oauth: &str) -> Result<(),String>;
   fn oauth_update(&mut self, new_oauth: &str) -> Result<(),String>;
 }
 
@@ -87,6 +96,34 @@ impl EkbTwitchValues for KdlDocument {
         match entry.value() {
           KdlValue::String(val) => { Ok(val.to_owned()) }
           e => { return Err(format!("oauth node first entry should be the oauth access token as a string. Found {:?}", e)); }
+        }
+      } else { return Err("oauth node has no fields".to_owned()); }
+    } else { return Err("oauth node not present".to_owned()); }
+  }
+  fn bot_account_update(&mut self, new_bot_account: &str) -> Result<(),String> {
+    if let Some(node) = self.get_mut("bot-account") {
+      if let Some(entry) = node.entry_mut(0) {
+        entry.set_value(new_bot_account);
+        let value_repr = entry.value().to_string();
+        if let Some(format) = entry.format_mut() {
+          format.value_repr = value_repr;
+          Ok(())
+        } else {
+          return Err("internal entry updated but the string format representation was not. entry.format_mut() did not return Some(format)".to_owned())
+        }
+      } else { return Err("oauth node has no fields".to_owned()); }
+    } else { return Err("oauth node not present".to_owned()); }
+  }
+  fn channel_update(&mut self, new_channel: &str) -> Result<(),String> {
+    if let Some(node) = self.get_mut("channel") {
+      if let Some(entry) = node.entry_mut(0) {
+        entry.set_value(new_channel);
+        let value_repr = entry.value().to_string();
+        if let Some(format) = entry.format_mut() {
+          format.value_repr = value_repr;
+          Ok(())
+        } else {
+          return Err("internal entry updated but the string format representation was not. entry.format_mut() did not return Some(format)".to_owned())
         }
       } else { return Err("oauth node has no fields".to_owned()); }
     } else { return Err("oauth node not present".to_owned()); }
