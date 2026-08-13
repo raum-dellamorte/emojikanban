@@ -2,7 +2,7 @@ use {
   crate::{
     EmoteComEnum, EmoteData,
     config_kdl::{
-      EkbConfigDirs, EkbTwitchConfig,
+      EkbConfigDirs, EkbConfigUpdate, EkbTwitchConfig,
       serve_oauth_receiver,
     },
     effects::*,
@@ -154,7 +154,7 @@ impl EmojiKanBan {
                 handle.abort();
               }
               self.config_handle = Some(runtime.spawn(async move {
-                crate::get_or_create_config_emojikanban(None, tx).await;
+                crate::get_or_create_config_emojikanban(EkbConfigUpdate::default(), tx).await;
               }));
               self.twitch_status = AwaitingConfig;
             } else {
@@ -178,7 +178,12 @@ impl EmojiKanBan {
             while let Ok(res) = rx.try_recv() {
               match res {
                 OAuthToken(oauth) => {
-                  let oauth = { if update_oauth { Some(oauth.to_owned()) } else { None } };
+                  let oauth = { if update_oauth {
+                    EkbConfigUpdate {
+                      oauth: Some(oauth.to_owned()),
+                      ..Default::default()
+                    } 
+                  } else { EkbConfigUpdate::default() } };
                   if let Ok(mut update_oauth) = self.update_oauth.lock() {
                     *update_oauth = false;
                   }
@@ -277,6 +282,16 @@ impl GetPropertiesSource for EmojiKanBan {
     };
     props
       .add(
+        obs_string!("twitch_bot_account"),
+        obs_string!("Twitch bot account"),
+        TextProp::new(TextType::Default),
+      )
+      .add(
+        obs_string!("twitch_channel"),
+        obs_string!("Twitch channel"),
+        TextProp::new(TextType::Default),
+      )
+      .add(
         obs_string!("emotes_max"), 
         obs_string!("Cap the number of emotes to draw."), 
         NumberProp::new_int()
@@ -310,6 +325,12 @@ impl GetPropertiesSource for EmojiKanBan {
 impl UpdateSource for EmojiKanBan {
   fn update(&mut self, settings: &mut DataObj, _context: &mut GlobalContext) {
     let data = self;
+    // if let Some(bot_account) = settings.get("twitch_bot_account".into()) {
+    //   data.update_bot_account(bot_account.into());
+    // }
+    // if let Some(channel) = settings.get("twitch_channel".into()) {
+    //   data.update_channel(channel.into());
+    // }
     if let Some(emotes_max) = settings.get(obs_string!("emotes_max")) {
       data.emote_queue_max_length = emotes_max;
     }

@@ -18,19 +18,22 @@ fn main() -> Result<(), anyhow::Error> {
   
   let mut answer = String::new();
   std::io::stdin().read_line(&mut answer)?;
-  let oauth: Option<String> = if answer.trim().eq_ignore_ascii_case("y") {
+  let config_update: EkbConfigUpdate = if answer.trim().eq_ignore_ascii_case("y") {
     println!("Open this URL in your browser:\n{TWITCH_AUTH_URL}");
     let access_token = serve_oauth_receiver()?;
     println!("Twitch access token: {access_token}");
-    Some(access_token)
+    EkbConfigUpdate {
+      oauth: Some(access_token),
+      ..Default::default()
+    }
   } else {
-    None
+    EkbConfigUpdate::default()
   };
   
   let runtime = tokio::runtime::Runtime::new().unwrap();
   let (oauth_tx, mut oauth_rx) = tokio::sync::mpsc::unbounded_channel();
   let _handle = runtime.spawn(async {
-    emojikanban::get_or_create_config_emojikanban(oauth, oauth_tx).await;
+    emojikanban::get_or_create_config_emojikanban(config_update, oauth_tx).await;
   });
   let (ekb_config_dirs, conf) = match oauth_rx.blocking_recv() {
     Some(emojikanban::plugin::TwitchOAuthRcvr::NewConfigData(data)) => data,

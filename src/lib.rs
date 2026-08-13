@@ -241,7 +241,7 @@ async fn connect_twitch_client(conf: &EkbTwitchConfig) -> Result<irc::client::Cl
 }
 
 #[allow(clippy::needless_return)] // 'return' statements make the intention more obvious.
-pub async fn get_or_create_config_emojikanban(oauth: Option<String>, tx: UnboundedSender<TwitchOAuthRcvr>) { // -> Result<(EkbConfigDirs, EkbTwitchConfig), String>
+pub async fn get_or_create_config_emojikanban(config_update: EkbConfigUpdate, tx: UnboundedSender<TwitchOAuthRcvr>) { // -> Result<(EkbConfigDirs, EkbTwitchConfig), String>
   let app_name = Some("emojikanban");
   let config_file = "config.kdl";
   let config_kdl = 
@@ -292,7 +292,7 @@ oauth       g0Bble0dEE0GukK0enCryPTIon0KEy // <- With or without "oauth:" prefix
             let _ = tx.send(RcvrError(e));
           }
           Ok(conf) => {
-            match validate_config(config_path, data_path, conf, oauth).await {
+            match validate_config(config_path, data_path, conf, config_update).await {
               Ok(data) => { let _ = tx.send(NewConfigData(data)); }
               Err(e) => { let _ = tx.send(RcvrError(e)); }
             }
@@ -307,7 +307,7 @@ oauth       g0Bble0dEE0GukK0enCryPTIon0KEy // <- With or without "oauth:" prefix
 }
 
 #[allow(clippy::needless_return, unused)]
-async fn validate_config(mut config_path: PathBuf, data_path: PathBuf, conf: String, updated_oauth: Option<String>) -> Result<(EkbConfigDirs, EkbTwitchConfig), anyhow::Error> {
+async fn validate_config(mut config_path: PathBuf, data_path: PathBuf, conf: String, config_update: EkbConfigUpdate) -> Result<(EkbConfigDirs, EkbTwitchConfig), anyhow::Error> {
   let mut doc_res: Result<KdlDocument, KdlError> = conf.parse();
   match doc_res {
     Err(e) => {
@@ -316,14 +316,34 @@ async fn validate_config(mut config_path: PathBuf, data_path: PathBuf, conf: Str
       return Err(error.into());
     }
     Ok(mut doc) => {
-      if let Some(new_oauth) = updated_oauth {
-        let oauth_update_error = doc.oauth_update(&new_oauth);
-        if oauth_update_error.is_ok() {
+      if let Some(new_value) = config_update.bot_account {
+        let update_error = doc.bot_account_update(&new_value);
+        if update_error.is_ok() {
           if let Err(e) = std::fs::write(&config_path, doc.to_string()) {
-            log::error!("Failed to write new oauth token to {}\nKey will not be retained after this session.\nError: {}", config_path.display(), e);
+            log::error!("Failed to write new bot-accout value to {}\nValue will not be retained after this session.\nError: {}", config_path.display(), e);
           }
         } else {
-          log::error!("oauth_update_error: {}", oauth_update_error.err().unwrap());
+          log::error!("kdl update error for bot-account: {}", update_error.err().unwrap());
+        }
+      }
+      if let Some(new_value) = config_update.channel {
+        let update_error = doc.channel_update(&new_value);
+        if update_error.is_ok() {
+          if let Err(e) = std::fs::write(&config_path, doc.to_string()) {
+            log::error!("Failed to write new channel value to {}\nValue will not be retained after this session.\nError: {}", config_path.display(), e);
+          }
+        } else {
+          log::error!("kdl update error for channel: {}", update_error.err().unwrap());
+        }
+      }
+      if let Some(new_value) = config_update.oauth {
+        let update_error = doc.oauth_update(&new_value);
+        if update_error.is_ok() {
+          if let Err(e) = std::fs::write(&config_path, doc.to_string()) {
+            log::error!("Failed to write new oauth token to {}\nToken will not be retained after this session.\nError: {}", config_path.display(), e);
+          }
+        } else {
+          log::error!("kdl update_error for oauth: {}", update_error.err().unwrap());
         }
       }
       let client: HelixClient<reqwest::Client> = HelixClient::default();
