@@ -375,6 +375,8 @@ impl VideoTickSource for EmojiKanBan {
         }
         EmoteComEnum::TwitchConnectionFailure(e) => {
           log::error!("Twitch Connection Failure: {}", e.as_ref().as_ref().unwrap_err());
+          data.twitch_status = Disconnected;
+          data.twitch_handle.take();
         }
         EmoteComEnum::SqliteConnectionFailure(e) => {
           log::error!("Sqlite Connection Failure: {}", e.as_ref().as_ref().unwrap_err());
