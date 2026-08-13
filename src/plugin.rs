@@ -197,8 +197,7 @@ impl EmojiKanBan {
               }
             }
           }
-          if let Some((ref ekb_config_dirs, ref conf)) = self.config_data {
-            let (ekb_config_dirs, conf) = (ekb_config_dirs.clone(), conf.clone());
+          if let Some((ekb_config_dirs, conf)) = self.config_data.take() {
             if let Some(mut rx) = self.emote_rx.take() {
               rx.close();
               while rx.blocking_recv().is_some() {}
