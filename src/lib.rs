@@ -300,8 +300,8 @@ oauth       g0Bble0dEE0GukK0enCryPTIon0KEy // <- With or without "oauth:" prefix
       }
     }
   } else {
-    let error = anyhow!("Failed to get home directory. Cannot check for or create config file.");
-    log::info!("{}", error);
+    let e = anyhow!("Failed to get home directory. Cannot check for or create config file.");
+    let _ = tx.send(RcvrError(e));
   }
 }
 
