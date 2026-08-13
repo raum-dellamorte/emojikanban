@@ -28,13 +28,16 @@ fn main() -> Result<(), anyhow::Error> {
   };
   
   let runtime = tokio::runtime::Runtime::new().unwrap();
-  let (ekb_config_dirs, conf) = runtime.block_on(async {
-    match emojikanban::get_or_create_config_emojikanban(oauth).await {
-      Err(e)  => { Err(anyhow::format_err!("{}", e)) }
-      Ok(res) => { Ok(res) }
-    }
-  })?;
-  
+  let (oauth_tx, mut oauth_rx) = tokio::sync::mpsc::unbounded_channel();
+  let _handle = runtime.spawn(async {
+    emojikanban::get_or_create_config_emojikanban(oauth, oauth_tx).await;
+  });
+  let (ekb_config_dirs, conf) = match oauth_rx.blocking_recv() {
+    Some(emojikanban::plugin::TwitchOAuthRcvr::NewConfigData(data)) => data,
+    Some(emojikanban::plugin::TwitchOAuthRcvr::OAuthToken(_)) => { panic!("Got token not asked for in main") }
+    Some(emojikanban::plugin::TwitchOAuthRcvr::RcvrError(e)) => { panic!("Error getting config in main: {}", e) }
+    None => { unreachable!() }
+  };
   let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<emojikanban::EmoteComEnum>();
   runtime.spawn(async move {
     emojikanban::start_twitch_monitor(ekb_config_dirs, conf, tx).await;

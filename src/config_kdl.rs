@@ -11,13 +11,13 @@ use {
   },
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct EkbConfigDirs {
   pub config: PathBuf,
   pub data:   PathBuf,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct EkbTwitchConfig {
   bot_account: String,
   channel:     String,

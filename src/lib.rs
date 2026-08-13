@@ -1,9 +1,15 @@
 use {
   crate::{
     config_kdl::*,
-    plugin::*,
+    plugin::{
+      TwitchOAuthRcvr::*,
+      *,
+    },
   },
-  anyhow::Result,
+  anyhow::{
+    Result,
+    anyhow,
+  },
   futures::StreamExt,
   irc::client::prelude::*,
   kdl::{
@@ -235,7 +241,7 @@ async fn connect_twitch_client(conf: &EkbTwitchConfig) -> Result<irc::client::Cl
 }
 
 #[allow(clippy::needless_return)] // 'return' statements make the intention more obvious.
-pub async fn get_or_create_config_emojikanban(oauth: Option<String>) -> Result<(EkbConfigDirs, EkbTwitchConfig), String> {
+pub async fn get_or_create_config_emojikanban(oauth: Option<String>, tx: UnboundedSender<TwitchOAuthRcvr>) { // -> Result<(EkbConfigDirs, EkbTwitchConfig), String>
   let app_name = Some("emojikanban");
   let config_file = "config.kdl";
   let config_kdl = 
@@ -252,58 +258,60 @@ oauth       g0Bble0dEE0GukK0enCryPTIon0KEy // <- With or without "oauth:" prefix
   if let Some(app_dirs) = AppDirs::new(app_name, true) {
     let mut config_path = app_dirs.config_dir;
     if let Err(e) = std::fs::create_dir_all(&config_path) {
-      let error = format!("Failed to create config dir: {}\nError: {}", config_path.display(), e);
-      // log::error!("{}", error);
-      return Err(error);
+      let e = anyhow!("Failed to create config dir: {}\nError: {}", config_path.display(), e);
+      let _ = tx.send(RcvrError(e));
     }
     config_path.push(config_file);
     // let mut cache_path = app_dirs.cache_dir;
     let data_path = app_dirs.data_dir;
     if let Err(e) = std::fs::create_dir_all(&data_path) {
-      let error = format!("Failed to create data dir: {}\nError: {}", data_path.display(), e);
-      // log::error!("{}", error);
-      return Err(error);
+      let e = anyhow!("Failed to create data dir: {}\nError: {}", data_path.display(), e);
+      let _ = tx.send(RcvrError(e));
     }
     match std::fs::exists(&config_path) {
       Err(e)    => {
-        let error = format!("Failed to check existence of config file: {}\nError: {}", config_path.display(), e);
-        // log::error!("{}", error);
-        return Err(error);
+        let e = anyhow!("Failed to check existence of config file: {}\nError: {}", config_path.display(), e);
+        let _ = tx.send(RcvrError(e));
       }
       Ok(false) => {
         if let Err(e) = std::fs::write(&config_path, config_kdl) {
-          let error = format!("Failed to write default config file: {}\nError: {}", config_path.display(), e);
-          // log::error!("{}", error);
-          return Err(error);
+          let e = anyhow!("Failed to write default config file: {}\nError: {}", config_path.display(), e);
+          let _ = tx.send(RcvrError(e));
         } else {
-          let error = format!("Default config.kdl created at {}", config_path.display());
-          // log::info!("{}", error);
-          return Err(error);
+          let e = anyhow!("Default config.kdl created at {}", config_path.display());
+          let _ = tx.send(RcvrError(e));
         }
       }
       Ok(true)  => {
         // The file exists, now we need to validate it
-        let conf = std::fs::read_to_string(&config_path).map_err(|e| { 
-          format!("File exists but failed to read: {}\nError: {}", config_path.display(), e)
-        })?;
-        return validate_config(config_path, data_path, conf, oauth).await;
+        match std::fs::read_to_string(&config_path) {
+          Err(e) => { 
+            let e = anyhow!("File exists but failed to read: {}\nError: {}", config_path.display(), e);
+            let _ = tx.send(RcvrError(e));
+          }
+          Ok(conf) => {
+            match validate_config(config_path, data_path, conf, oauth).await {
+              Ok(data) => { let _ = tx.send(NewConfigData(data)); }
+              Err(e) => { let _ = tx.send(RcvrError(e)); }
+            }
+          }
+        }
       }
     }
   } else {
-    let error = "Failed to get home directory. Cannot check for or create config file.".to_owned();
+    let error = anyhow!("Failed to get home directory. Cannot check for or create config file.");
     log::info!("{}", error);
-    return Err(error)
   }
 }
 
 #[allow(clippy::needless_return, unused)]
-async fn validate_config(mut config_path: PathBuf, data_path: PathBuf, conf: String, updated_oauth: Option<String>) -> Result<(EkbConfigDirs, EkbTwitchConfig), String> {
+async fn validate_config(mut config_path: PathBuf, data_path: PathBuf, conf: String, updated_oauth: Option<String>) -> Result<(EkbConfigDirs, EkbTwitchConfig), anyhow::Error> {
   let mut doc_res: Result<KdlDocument, KdlError> = conf.parse();
   match doc_res {
     Err(e) => {
-      let error = format!("Failed to parse {}\nError: {}", config_path.display(), e);
-      log::error!("{}", error);
-      return Err(error);
+      let error = anyhow!("Failed to parse {}\nError: {}", config_path.display(), e);
+      // log::error!("{}", error);
+      return Err(error.into());
     }
     Ok(mut doc) => {
       if let Some(new_oauth) = updated_oauth {
@@ -319,7 +327,7 @@ async fn validate_config(mut config_path: PathBuf, data_path: PathBuf, conf: Str
       let client: HelixClient<reqwest::Client> = HelixClient::default();
       match EkbTwitchConfig::try_from(doc) {
         Err(e) => {
-          let error = format!("Failed to parse {}\nError: {}", config_path.display(), e);
+          let error = anyhow!("Failed to parse {}\nError: {}", config_path.display(), e);
           log::error!("{}", error);
           return Err(error);
         }
@@ -327,7 +335,7 @@ async fn validate_config(mut config_path: PathBuf, data_path: PathBuf, conf: Str
           let token = AccessToken::new(conf.oauth());
           match UserToken::from_token(&client, token.clone()).await {
             Err(e) => {
-              let error = format!("Failed to validate oauth token: {:?}, {}", conf, e);
+              let error = anyhow!("Failed to validate oauth token: {:?}, {}", conf, e);
               log::error!("{}", error);
               return Err(error);
             }
@@ -342,7 +350,7 @@ async fn validate_config(mut config_path: PathBuf, data_path: PathBuf, conf: Str
                 config_path.pop();
                 return Ok((EkbConfigDirs{ config: config_path, data: data_path}, conf));
               } else {
-                let error = format!(
+                let error = anyhow!(
                   "OAUTH Token valid, but either the bot_username or the channel is invalid in: {}\nbot-account: {} {:?}\nchannel: {} {:?}",
                   config_path.display(), bot_account, bot_valid, channel, chn_valid, 
                 );

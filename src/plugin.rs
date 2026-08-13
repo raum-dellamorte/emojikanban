@@ -6,14 +6,12 @@ use {
       serve_oauth_receiver,
     },
     effects::*,
-    plugin::TwitchOAuthRcvr::{
-      Error, OAuthToken,
+    plugin::{
+      TwitchConnectionStatus::*, TwitchOAuthRcvr::*,
     },
   },
   image::{
-    AnimationDecoder,
-    DynamicImage,
-    ImageFormat,
+    AnimationDecoder, DynamicImage, ImageFormat,
     codecs::gif::GifDecoder,
   },
   obs_wrapper::{
@@ -31,24 +29,42 @@ use {
     source::*,
   },
   rand::prelude::*,
-  std::collections::VecDeque,
+  std::{
+    collections::VecDeque,
+    ops::Deref,
+    sync::{
+      Arc, Mutex,
+    },
+  },
   tokio::{
     runtime::Runtime,
     sync::mpsc::{
-      UnboundedReceiver,UnboundedSender,
+      UnboundedReceiver, UnboundedSender,
     },
+    task::JoinHandle,
   }, 
 };
 
-enum TwitchOAuthRcvr {
+pub enum TwitchOAuthRcvr {
   OAuthToken(String),
-  Error(anyhow::Error),
+  NewConfigData((EkbConfigDirs, EkbTwitchConfig)),
+  RcvrError(anyhow::Error),
+}
+
+enum TwitchConnectionStatus {
+  Connected,
+  Disconnected,
+  AwaitingConfig,
 }
 
 pub struct EmojiKanBan {
   id: usize,
-  // #[allow(dead_code)]
   runtime: Option<Runtime>,
+  update_oauth: Arc<Mutex<bool>>,
+  config_data: Option<(EkbConfigDirs, EkbTwitchConfig)>,
+  config_handle: Option<JoinHandle<()>>,
+  twitch_handle: Option<JoinHandle<()>>,
+  twitch_status: TwitchConnectionStatus,
   oauth_tx: Option<UnboundedSender<TwitchOAuthRcvr>>,
   oauth_rx: Option<UnboundedReceiver<TwitchOAuthRcvr>>,
   emote_rx: Option<UnboundedReceiver<EmoteComEnum>>, // EmoteData -> anyhow::Result<EmoteData, String> to return error to try to reconnect to Twitch
@@ -63,9 +79,20 @@ pub struct EmojiKanBan {
 
 impl Drop for EmojiKanBan {
   fn drop(&mut self) {
+    if let Some(mut rx) = self.oauth_rx.take() {
+      rx.close();
+      _ = self.oauth_tx.take();
+      while rx.blocking_recv().is_some() {}
+    }
     if let Some(mut rx) = self.emote_rx.take() {
       rx.close();
       while rx.blocking_recv().is_some() {}
+    }
+    if let Some(handle) = self.config_handle.take() {
+      handle.abort();
+    }
+    if let Some(handle) = self.twitch_handle.take() {
+      handle.abort();
     }
     if let Some(runtime) = self.runtime.take() {
       runtime.shutdown_timeout(std::time::Duration::from_nanos(500));
@@ -101,6 +128,11 @@ impl Sourceable for EmojiKanBan {
     let mut ekb = Self {
       id: source.id(),
       runtime: None,
+      update_oauth: Arc::new(Mutex::new(false)),
+      config_data: None,
+      config_handle: None,
+      twitch_handle: None,
+      twitch_status: Disconnected,
       oauth_tx: None,
       oauth_rx: None,
       emote_rx: None,
@@ -112,40 +144,92 @@ impl Sourceable for EmojiKanBan {
       screen_offset_x,
       screen_offset_y,
     };
-    ekb.connect_twitch(None);
+    ekb.check_twitch_connection();
     ekb
   }
 }
 
 impl EmojiKanBan {
-  pub fn connect_twitch(&mut self, oauth: Option<String>) {
-    if let Some(runtime) = self.runtime.as_mut() {
-      let ekbc: anyhow::Result<(EkbConfigDirs, EkbTwitchConfig),String> = runtime.block_on(async {
-        crate::get_or_create_config_emojikanban(oauth).await
-      });
-      if let Ok((ekb_config_dirs, conf)) = ekbc {
-        if let Some(mut rx) = self.oauth_rx.take() {
-          rx.close();
-          _ = self.oauth_tx.take();
-          while rx.blocking_recv().is_some() {}
+  pub fn check_twitch_connection(&mut self) {
+    let update_oauth = self.update_oauth();
+    match self.twitch_status {
+      Connected => {}
+      Disconnected => {
+        if let Some(runtime) = self.runtime.as_mut() { // We have a runtime and now need to set up the Twitch connection
+          if !update_oauth {
+            if let Some(tx) = self.oauth_tx.as_ref() {
+              let tx = tx.clone();
+              self.config_handle = Some(runtime.spawn(async move {
+                crate::get_or_create_config_emojikanban(None, tx).await;
+              }));
+              self.twitch_status = AwaitingConfig;
+            } else {
+              log::error!("Unexpected Error: check_twitch_connection expected self.oauth_tx to be Some(tx), which should have been created at the same time as self.runtime.");
+            }
+          } else {
+            self.twitch_status = AwaitingConfig;
+          }
+        } else { // We are not connected to Twitch and need to establish the runtime
+          let runtime = tokio::runtime::Runtime::new().unwrap();
+          let (oauth_tx, oauth_rx) = tokio::sync::mpsc::unbounded_channel();
+          self.runtime = Some(runtime);
+          self.oauth_tx = Some(oauth_tx);
+          self.oauth_rx = Some(oauth_rx);
+          self.check_twitch_connection(); // Try again with the runtime now available.
         }
-        if let Some(mut rx) = self.emote_rx.take() {
-          rx.close();
-          while rx.blocking_recv().is_some() {}
-        }
-        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
-        let (emote_tx, emote_rx) = tokio::sync::mpsc::unbounded_channel();
-        runtime.spawn(async move {
-          crate::start_twitch_monitor(ekb_config_dirs, conf, emote_tx).await;
-        });
-        self.oauth_tx = Some(cmd_tx);
-        self.oauth_rx = Some(cmd_rx);
-        self.emote_rx = Some(emote_rx);
       }
-    } else {
-      self.runtime = Some(tokio::runtime::Runtime::new().unwrap());
-      self.connect_twitch(oauth);
+      AwaitingConfig => {
+        if let Some(runtime) = self.runtime.as_mut() {
+          if let Some(rx) = self.oauth_rx.as_mut() {
+            while let Ok(res) = rx.try_recv() {
+              match res {
+                OAuthToken(oauth) => {
+                  let oauth = { if update_oauth { Some(oauth.to_owned()) } else { None } };
+                  if let Ok(mut update_oauth) = self.update_oauth.lock() {
+                    *update_oauth = false;
+                  }
+                  if let Some(tx) = self.oauth_tx.as_ref() {
+                    let tx = tx.clone();
+                    self.config_handle = Some(runtime.spawn(async move {
+                      crate::get_or_create_config_emojikanban(oauth, tx).await;
+                    }));
+                  } else {
+                    log::error!("Unexpected Error: check_twitch_connection expected self.oauth_tx to be Some(tx), which should have been created at the same time as self.runtime.");
+                  }
+                }
+                NewConfigData(data) => {
+                  self.config_data = Some(data);
+                }
+                RcvrError(e) => {
+                  log::error!("{}", e);
+                }
+              }
+            }
+          }
+          if let Some((ref ekb_config_dirs, ref conf)) = self.config_data {
+            let (ekb_config_dirs, conf) = (ekb_config_dirs.clone(), conf.clone());
+            if let Some(mut rx) = self.emote_rx.take() {
+              rx.close();
+              while rx.blocking_recv().is_some() {}
+            }
+            if let Some(handle) = self.twitch_handle.take() {
+              handle.abort();
+            }
+            let (emote_tx, emote_rx) = tokio::sync::mpsc::unbounded_channel();
+            self.twitch_handle = Some(runtime.spawn(async move {
+              crate::start_twitch_monitor(ekb_config_dirs, conf, emote_tx).await;
+            }));
+            self.emote_rx = Some(emote_rx);
+            self.twitch_status = Connected;
+          }
+        }
+      }
     }
+  }
+  pub fn update_oauth(&self) -> bool {
+    if let Ok(lock) = self.update_oauth.lock() {
+      return lock.deref().clone();
+    } else { false }
   }
 } // impl EmojiKanBan
 
@@ -175,19 +259,29 @@ impl GetPropertiesSource for EmojiKanBan {
     let mut props = Properties::new();
     if let Some(ref tx) = self.oauth_tx {
       let oauth_tx = tx.clone();
-      props.add_button(
+      let update_oauth = self.update_oauth.clone();
+      props.add_button_with_refresh(
         "twitch_authenticate".into(),
         "Connect Twitch".into(),
+        true,
         move || {
           log::info!("EmojiKanBan attempting to (re)authenticate Twitch for access to chat. Server starting on http://localhost:3000/");
-          match serve_oauth_receiver() {
-            Ok(oauth) => {
-              _ = oauth_tx.send(TwitchOAuthRcvr::OAuthToken(oauth));
+          std::thread::spawn({
+            if let Ok(mut update_oauth) = update_oauth.lock() {
+              *update_oauth = true;
             }
-            Err(e) => {
-              _ = oauth_tx.send(TwitchOAuthRcvr::Error(e.into()));
+            let oauth_tx = oauth_tx.clone();
+            move || {
+              match serve_oauth_receiver() {
+                Ok(oauth) => {
+                  _ = oauth_tx.send(TwitchOAuthRcvr::OAuthToken(oauth));
+                }
+                Err(e) => {
+                  _ = oauth_tx.send(TwitchOAuthRcvr::RcvrError(e.into()));
+                }
+              }
             }
-          }
+          });
         },
       );
     };
@@ -249,66 +343,50 @@ impl VideoTickSource for EmojiKanBan {
     let data: &mut EmojiKanBan = self;
     let w = data.screen_w as f32;
     let h = data.screen_h as f32;
-    let mut oauth = None;
-    if let Some(rx) = data.oauth_rx.as_mut() {
-      while let Ok(res) = rx.try_recv() {
-        match res {
-          OAuthToken(token) => { oauth = Some(token); }
-          Error(e) => { log::error!("{}", e); }
-        }
-      }
-    }
-    if oauth.is_some() {
-      data.connect_twitch(oauth); // This should somehow be handled by the button, maybe?
-    }
+    data.check_twitch_connection(); // This is blocking, the next step should be to start a thread and send back (EkbConfigDirs, EkbTwitchConfig)
     if let Some(rx) = data.emote_rx.as_mut() {
-      while let Ok(emote_data) = rx.try_recv() {
-        if (data.emote_queue.len() as u32) < data.emote_queue_max_length {
-          let emote_data = match emote_data {
-            EmoteComEnum::Data(emote_data) => { emote_data }
-            EmoteComEnum::TwitchConnectionFailure(e) => {
-              log::error!("Twitch Connection Failure: {}", e.as_ref().as_ref().unwrap_err());
+      while let Ok(emote_data) = rx.try_recv() { match emote_data {
+        EmoteComEnum::Data(emote_data) => {
+          if (data.emote_queue.len() as u32) < data.emote_queue_max_length {
+            let mut emote: EmoteOBS = emote_data.into();
+            if emote.tex_vec.is_empty() || emote.frame >= emote.tex_vec.len() {
+              log::error!("tex_vec empty or current frame out of bounds: len: {} frame: {}", emote.tex_vec.len(), emote.frame);
               continue;
             }
-            EmoteComEnum::SqliteConnectionFailure(e) => {
-              log::error!("Sqlite Connection Failure: {}", e.as_ref().as_ref().unwrap_err());
-              continue;
-            }
-          };
-          let mut emote: EmoteOBS = emote_data.into();
-          if emote.tex_vec.is_empty() || emote.frame >= emote.tex_vec.len() {
-            log::error!("tex_vec empty or current frame out of bounds: len: {} frame: {}", emote.tex_vec.len(), emote.frame);
-            continue;
+            let (ew, eh) = (emote.tex_vec[emote.frame].width() as f32, emote.tex_vec[emote.frame].height() as f32);
+            let picker = data.rng.random_range(1..=100);
+            emote.effect = Some(match picker {
+              1..=10 => {
+                SlideUpEffect::init(
+                  w,h,ew,eh,
+                  &mut data.rng,
+                )
+              }
+              11..=30 => {
+                InchWormEffect::init(
+                  w, h, ew, eh,
+                  &mut data.rng
+                )
+              }
+              31..=100 => {
+                GravityEffect::init(
+                  w,h,ew,eh,
+                  GRAVITY, BOUNCE,
+                  &mut data.rng,
+                )
+              }
+              _ => { unreachable!() }
+            });
+            data.emote_queue.push_back(emote);
           }
-          let (ew, eh) = (emote.tex_vec[emote.frame].width() as f32, emote.tex_vec[emote.frame].height() as f32);
-          let picker = data.rng.random_range(1..=100);
-          emote.effect = Some(match picker {
-            1..=10 => {
-              SlideUpEffect::init(
-                w,h,ew,eh,
-                &mut data.rng,
-              )
-            }
-            11..=30 => {
-              InchWormEffect::init(
-                w, h, ew, eh,
-                &mut data.rng
-              )
-            }
-            31..=100 => {
-              GravityEffect::init(
-                w,h,ew,eh,
-                GRAVITY, BOUNCE,
-                &mut data.rng,
-              )
-            }
-            _ => { unreachable!() }
-          });
-          data.emote_queue.push_back(emote);
-        } else {
-          let _ = emote_data;
         }
-      }
+        EmoteComEnum::TwitchConnectionFailure(e) => {
+          log::error!("Twitch Connection Failure: {}", e.as_ref().as_ref().unwrap_err());
+        }
+        EmoteComEnum::SqliteConnectionFailure(e) => {
+          log::error!("Sqlite Connection Failure: {}", e.as_ref().as_ref().unwrap_err());
+        }
+      }}
     }
     // Animate emotes in queue
     for emote in data.emote_queue.iter_mut() {
