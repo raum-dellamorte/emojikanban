@@ -268,6 +268,7 @@ oauth       g0Bble0dEE0GukK0enCryPTIon0KEy // <- With or without "oauth:" prefix
     if let Err(e) = std::fs::create_dir_all(&data_path) {
       let e = anyhow!("Failed to create data dir: {}\nError: {}", data_path.display(), e);
       let _ = tx.send(RcvrError(e));
+      return;
     }
     match std::fs::exists(&config_path) {
       Err(e)    => {
