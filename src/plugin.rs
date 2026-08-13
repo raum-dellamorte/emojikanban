@@ -150,6 +150,9 @@ impl EmojiKanBan {
           if !update_oauth {
             if let Some(tx) = self.oauth_tx.as_ref() {
               let tx = tx.clone();
+              if let Some(handle) = self.config_handle.take() {
+                handle.abort();
+              }
               self.config_handle = Some(runtime.spawn(async move {
                 crate::get_or_create_config_emojikanban(None, tx).await;
               }));
