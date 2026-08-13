@@ -201,13 +201,10 @@ impl EmojiKanBan {
             }
           }
           if let Some((ekb_config_dirs, conf)) = self.config_data.take() {
-            if let Some(mut rx) = self.emote_rx.take() {
-              rx.close();
-              while rx.blocking_recv().is_some() {}
-            }
             if let Some(handle) = self.twitch_handle.take() {
               handle.abort();
             }
+            self.emote_rx.take();
             let (emote_tx, emote_rx) = tokio::sync::mpsc::unbounded_channel();
             self.twitch_handle = Some(runtime.spawn(async move {
               crate::start_twitch_monitor(ekb_config_dirs, conf, emote_tx).await;
