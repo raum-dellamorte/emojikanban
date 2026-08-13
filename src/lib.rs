@@ -260,6 +260,7 @@ oauth       g0Bble0dEE0GukK0enCryPTIon0KEy // <- With or without "oauth:" prefix
     if let Err(e) = std::fs::create_dir_all(&config_path) {
       let e = anyhow!("Failed to create config dir: {}\nError: {}", config_path.display(), e);
       let _ = tx.send(RcvrError(e));
+      return;
     }
     config_path.push(config_file);
     // let mut cache_path = app_dirs.cache_dir;
