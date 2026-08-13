@@ -140,7 +140,11 @@ impl EmojiKanBan {
   pub fn check_twitch_connection(&mut self) {
     let update_oauth = self.update_oauth();
     match self.twitch_status {
-      Connected => {}
+      Connected => {
+        if update_oauth {
+          self.twitch_status = AwaitingConfig;
+        }
+      }
       Disconnected => {
         if let Some(runtime) = self.runtime.as_mut() { // We have a runtime and now need to set up the Twitch connection
           if !update_oauth {
