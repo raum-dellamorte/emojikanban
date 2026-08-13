@@ -1028,9 +1028,9 @@ dependencies = [
 
 [[package]]
 name = "http-body-util"
-version = "0.1.4"
+version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e9f41fd6a08e4d4ec69df65976da761afd5ad5e58a9d4acb46bd1c953a9e3ff2"
+checksum = "23169fe34a5fbcdd3f3862e78fb9b6fccd5f02a6dc6f732547005d45631ce71c"
 dependencies = [
  "bytes",
  "futures-core",
@@ -1735,7 +1735,7 @@ dependencies = [
 [[package]]
 name = "obs-sys"
 version = "0.3.0"
-source = "git+https://github.com/raum-dellamorte/rust-obs-wrapper.git?branch=compat_32.0.4#36ee5510bff51e207091fbf398448ef660bbfd09"
+source = "git+https://github.com/raum-dellamorte/rust-obs-wrapper.git?branch=compat_32.0.4#f43ba40776bcb4e7976db736ad3c83a37c5d26df"
 dependencies = [
  "bindgen",
  "cc",
@@ -1747,7 +1747,7 @@ dependencies = [
 [[package]]
 name = "obs-wrapper"
 version = "0.4.1"
-source = "git+https://github.com/raum-dellamorte/rust-obs-wrapper.git?branch=compat_32.0.4#36ee5510bff51e207091fbf398448ef660bbfd09"
+source = "git+https://github.com/raum-dellamorte/rust-obs-wrapper.git?branch=compat_32.0.4#f43ba40776bcb4e7976db736ad3c83a37c5d26df"
 dependencies = [
  "log",
  "num-traits",

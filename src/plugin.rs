@@ -58,7 +58,7 @@ enum TwitchConnectionStatus {
 }
 
 pub struct EmojiKanBan {
-  id: usize,
+  source: SourceRef,
   runtime: Option<Runtime>,
   update_oauth: Arc<Mutex<bool>>,
   config_data: Option<(EkbConfigDirs, EkbTwitchConfig)>,
@@ -113,7 +113,7 @@ impl Sourceable for EmojiKanBan {
     source.update_source_settings(settings);
     
     let mut ekb = Self {
-      id: source.id(),
+      source: source.clone(),
       runtime: None,
       update_oauth: Arc::new(Mutex::new(false)),
       config_data: None,
@@ -197,6 +197,14 @@ impl EmojiKanBan {
                   }
                 }
                 NewConfigData(data) => {
+                  let bot_account: ObsString = data.1.bot_account().into();
+                  let channel: ObsString = data.1.channel().into();
+                  {
+                    let mut settings = self.source.get_settings();
+                    settings.set_string(obs_string!("twitch_bot_account"), bot_account);
+                    settings.set_string("twitch_channel", channel);
+                  }
+                  self.source.update_source_properties();
                   self.config_data = Some(data);
                 }
                 RcvrError(e) => {
@@ -415,7 +423,7 @@ impl VideoRenderSource for EmojiKanBan {
     let data: &mut EmojiKanBan = self;
     unsafe {
       {
-        let source: *mut u8 = data.id as *mut u8;
+        let source: *mut u8 = data.source.id() as *mut u8;
         obs_source_set_flags(source as *mut obs_source, OBS_SOURCE_CUSTOM_DRAW);
       }
       obs_enter_graphics();
