@@ -317,37 +317,22 @@ async fn validate_config(mut config_path: PathBuf, data_path: PathBuf, conf: Str
     }
     Ok(mut doc) => {
       if let Some(new_value) = config_update.bot_account {
-        let update_error = doc.bot_account_update(&new_value);
-        if update_error.is_ok() {
-          if let Err(e) = std::fs::write(&config_path, doc.to_string()) {
-            log::error!("Failed to write new bot-accout value to {}\nValue will not be retained after this session.\nError: {}", config_path.display(), e);
-          }
-        } else {
-          log::error!("kdl update error for bot-account: {}", update_error.err().unwrap());
-        }
-      }
+        doc.bot_account_update(&new_value).map_err(|e| {
+          log::error!("kdl update error for bot-account: {}", e);
+        });
+      };
       if let Some(new_value) = config_update.channel {
-        let update_error = doc.channel_update(&new_value);
-        if update_error.is_ok() {
-          if let Err(e) = std::fs::write(&config_path, doc.to_string()) {
-            log::error!("Failed to write new channel value to {}\nValue will not be retained after this session.\nError: {}", config_path.display(), e);
-          }
-        } else {
-          log::error!("kdl update error for channel: {}", update_error.err().unwrap());
-        }
+        doc.channel_update(&new_value).map_err(|e| {
+          log::error!("kdl update error for channel: {}", e);
+        });
       }
       if let Some(new_value) = config_update.oauth {
-        let update_error = doc.oauth_update(&new_value);
-        if update_error.is_ok() {
-          if let Err(e) = std::fs::write(&config_path, doc.to_string()) {
-            log::error!("Failed to write new oauth token to {}\nToken will not be retained after this session.\nError: {}", config_path.display(), e);
-          }
-        } else {
-          log::error!("kdl update_error for oauth: {}", update_error.err().unwrap());
-        }
+        doc.oauth_update(&new_value).map_err(|e| {
+          log::error!("kdl update_error for oauth: {}", e);
+        });
       }
       let client: HelixClient<reqwest::Client> = HelixClient::default();
-      match EkbTwitchConfig::try_from(doc) {
+      match EkbTwitchConfig::try_from(doc.clone()) {
         Err(e) => {
           let error = anyhow!("Failed to parse {}\nError: {}", config_path.display(), e);
           log::error!("{}", error);
@@ -370,6 +355,9 @@ async fn validate_config(mut config_path: PathBuf, data_path: PathBuf, conf: Str
                 .expect("Failure awaiting client.get_channel_from_login for streamer channel.");
               if bot_valid.is_some() && chn_valid.is_some() {
                 config_path.pop();
+                if let Err(e) = std::fs::write(&config_path, doc.to_string()) {
+                  log::error!("Failed to write new values to {}\nValues will not be retained after this session.\nError: {}", config_path.display(), e);
+                }
                 return Ok((EkbConfigDirs{ config: config_path, data: data_path}, conf));
               } else {
                 let error = anyhow!(
