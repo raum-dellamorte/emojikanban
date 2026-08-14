@@ -309,6 +309,7 @@ oauth       g0Bble0dEE0GukK0enCryPTIon0KEy // <- With or without "oauth:" prefix
 #[allow(clippy::needless_return, unused)]
 async fn validate_config(mut config_path: PathBuf, data_path: PathBuf, conf: String, config_update: EkbConfigUpdate) -> Result<(EkbConfigDirs, EkbTwitchConfig), anyhow::Error> {
   let mut doc_res: Result<KdlDocument, KdlError> = conf.parse();
+  let mut write_changes = false;
   match doc_res {
     Err(e) => {
       let error = anyhow!("Failed to parse {}\nError: {}", config_path.display(), e);
@@ -317,19 +318,22 @@ async fn validate_config(mut config_path: PathBuf, data_path: PathBuf, conf: Str
     }
     Ok(mut doc) => {
       if let Some(new_value) = config_update.bot_account {
-        doc.bot_account_update(&new_value).map_err(|e| {
-          log::error!("kdl update error for bot-account: {}", e);
-        });
+        match doc.bot_account_update(&new_value) {
+          Ok(_) => { write_changes = true; }
+          Err(e) => { log::error!("kdl update error for bot-account: {}", e); }
+        }
       };
       if let Some(new_value) = config_update.channel {
-        doc.channel_update(&new_value).map_err(|e| {
-          log::error!("kdl update error for channel: {}", e);
-        });
+        match doc.channel_update(&new_value) {
+          Ok(_) => { write_changes = true; }
+          Err(e) => { log::error!("kdl update error for channel: {}", e); }
+        }
       }
       if let Some(new_value) = config_update.oauth {
-        doc.oauth_update(&new_value).map_err(|e| {
-          log::error!("kdl update_error for oauth: {}", e);
-        });
+        match doc.oauth_update(&new_value) {
+          Ok(_) => { write_changes = true; }
+          Err(e) => { log::error!("kdl update_error for oauth: {}", e); }
+        }
       }
       let client: HelixClient<reqwest::Client> = HelixClient::default();
       match EkbTwitchConfig::try_from(doc.clone()) {
@@ -354,10 +358,10 @@ async fn validate_config(mut config_path: PathBuf, data_path: PathBuf, conf: Str
               let chn_valid = client.get_channel_from_login(&channel, &token).await
                 .expect("Failure awaiting client.get_channel_from_login for streamer channel.");
               if bot_valid.is_some() && chn_valid.is_some() {
-                config_path.pop();
-                if let Err(e) = std::fs::write(&config_path, doc.to_string()) {
+                if write_changes && let Err(e) = std::fs::write(&config_path, doc.to_string()) {
                   log::error!("Failed to write new values to {}\nValues will not be retained after this session.\nError: {}", config_path.display(), e);
                 }
+                config_path.pop();
                 return Ok((EkbConfigDirs{ config: config_path, data: data_path}, conf));
               } else {
                 let error = anyhow!(
