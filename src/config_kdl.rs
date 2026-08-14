@@ -108,10 +108,8 @@ impl EkbTwitchValues for KdlDocument {
         let value_repr = entry.value().to_string();
         if let Some(format) = entry.format_mut() {
           format.value_repr = value_repr;
-          Ok(())
-        } else {
-          return Err("internal entry updated but the string format representation was not. entry.format_mut() did not return Some(format)".to_owned())
         }
+        Ok(())
       } else { return Err("oauth node has no fields".to_owned()); }
     } else { return Err("oauth node not present".to_owned()); }
   }
@@ -122,10 +120,8 @@ impl EkbTwitchValues for KdlDocument {
         let value_repr = entry.value().to_string();
         if let Some(format) = entry.format_mut() {
           format.value_repr = value_repr;
-          Ok(())
-        } else {
-          return Err("internal entry updated but the string format representation was not. entry.format_mut() did not return Some(format)".to_owned())
         }
+        Ok(())
       } else { return Err("oauth node has no fields".to_owned()); }
     } else { return Err("oauth node not present".to_owned()); }
   }
@@ -136,10 +132,8 @@ impl EkbTwitchValues for KdlDocument {
         let value_repr = entry.value().to_string();
         if let Some(format) = entry.format_mut() {
           format.value_repr = value_repr;
-          Ok(())
-        } else {
-          return Err("internal entry updated but the string format representation was not. entry.format_mut() did not return Some(format)".to_owned())
         }
+        Ok(())
       } else { return Err("oauth node has no fields".to_owned()); }
     } else { return Err("oauth node not present".to_owned()); }
   }
