@@ -210,12 +210,12 @@ impl EmojiKanBan {
         }
       }
       ReloadConfig => {
-        if self.config_draft.bot_account.is_some() || self.config_draft.channel.is_some() {
-          if self.runtime.is_some() {
-            self.start_config_thread(self.config_draft.clone());
-          } else {
-            unreachable!()
-          }
+        self.disable_config_file_update();
+        let update = std::mem::take(&mut self.config_draft);
+        if update.bot_account.is_some() || update.channel.is_some() {
+          self.start_config_thread(self.config_draft.clone());
+        } else {
+          self.twitch_status = Connected;
         }
       }
       Connected => {
