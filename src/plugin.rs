@@ -334,7 +334,7 @@ impl GetPropertiesSource for EmojiKanBan {
       let update_config_file = self.need_config_file_update.clone();
       props.add_button_with_refresh(
         "twitch_config_update".into(),
-        "Connect Twitch".into(),
+        "Apply Below Bot Account and Channel Values To Config".into(),
         true,
         move || {
           log::info!("EmojiKanBan updating config.kdl with new bot-account/channel values.");
