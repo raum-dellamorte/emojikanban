@@ -59,7 +59,7 @@ enum TwitchConnectionStatus {
 }
 
 pub struct EmojiKanBan {
-  source: SourceRef,
+  source: WeakSourceRef,
   runtime: Option<Runtime>,
   need_oauth_update: Arc<Mutex<bool>>,
   need_config_file_update: Arc<Mutex<bool>>,
@@ -116,7 +116,7 @@ impl Sourceable for EmojiKanBan {
     source.update_source_settings(settings);
     
     let mut ekb = Self {
-      source: source.clone(),
+      source: source.downgrade(),
       runtime: None,
       need_oauth_update: Arc::new(Mutex::new(false)),
       need_config_file_update: Arc::new(Mutex::new(false)),
@@ -191,15 +191,17 @@ impl EmojiKanBan {
                 };
               }
               NewConfigData(data) => {
-                let bot_account: ObsString = data.1.bot_account().into();
-                let channel: ObsString = data.1.channel().into();
-                {
-                  let mut settings = self.source.get_settings();
-                  settings.set_string(obs_string!("twitch_bot_account"), bot_account);
-                  settings.set_string("twitch_channel", channel);
+                if let Some(mut source) = self.source.upgrade() {
+                  let bot_account: ObsString = data.1.bot_account().into();
+                  let channel: ObsString = data.1.channel().into();
+                  {
+                    let mut settings = source.get_settings();
+                    settings.set_string(obs_string!("twitch_bot_account"), bot_account);
+                    settings.set_string("twitch_channel", channel);
+                  }
+                  source.update_source_properties();
+                  self.config_data = Some(data);
                 }
-                self.source.update_source_properties();
-                self.config_data = Some(data);
               }
               RcvrError(e) => {
                 log::error!("{}", e);
@@ -483,8 +485,8 @@ impl VideoRenderSource for EmojiKanBan {
   fn video_render(&mut self, _context: &mut GlobalContext, _render: &mut VideoRenderContext) {
     let data: &mut EmojiKanBan = self;
     unsafe {
-      {
-        let source: *mut u8 = data.source.id() as *mut u8;
+      if let Some(source) = data.source.upgrade() {
+        let source: *mut u8 = source.id() as *mut u8;
         obs_source_set_flags(source as *mut obs_source, OBS_SOURCE_CUSTOM_DRAW);
       }
       obs_enter_graphics();
