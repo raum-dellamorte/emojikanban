@@ -418,7 +418,7 @@ impl VideoTickSource for EmojiKanBan {
     let data: &mut EmojiKanBan = self;
     let w = data.screen_w as f32;
     let h = data.screen_h as f32;
-    data.check_twitch_connection(); // This is blocking, the next step should be to start a thread and send back (EkbConfigDirs, EkbTwitchConfig)
+    data.check_twitch_connection();
     if let Some(rx) = data.emote_rx.as_mut() {
       while let Ok(emote_data) = rx.try_recv() { match emote_data {
         EmoteComEnum::Data(emote_data) => {
