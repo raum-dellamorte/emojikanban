@@ -3,7 +3,7 @@ use {
     EmoteComEnum, EmoteData,
     config_kdl::{
       EkbConfigDirs, EkbConfigUpdate, EkbTwitchConfig,
-      serve_oauth_receiver,
+      serve_oauth_receiver, validate_twitch_name,
     },
     effects::*,
     plugin::{
@@ -30,6 +30,7 @@ use {
   },
   rand::prelude::*,
   std::{
+    borrow::Cow,
     collections::VecDeque,
     ops::Deref,
     sync::{
@@ -52,16 +53,19 @@ pub enum TwitchOAuthRcvr {
 }
 
 enum TwitchConnectionStatus {
-  Connected,
-  Disconnected,
+  InitConnection,
   AwaitingConfig,
+  ReloadConfig,
+  Connected,
 }
 
 pub struct EmojiKanBan {
   source: SourceRef,
   runtime: Option<Runtime>,
-  update_oauth: Arc<Mutex<bool>>,
+  need_oauth_update: Arc<Mutex<bool>>,
+  need_config_file_update: Arc<Mutex<bool>>,
   config_data: Option<(EkbConfigDirs, EkbTwitchConfig)>,
+  config_draft: EkbConfigUpdate,
   config_handle: Option<JoinHandle<()>>,
   twitch_handle: Option<JoinHandle<()>>,
   twitch_status: TwitchConnectionStatus,
@@ -115,11 +119,13 @@ impl Sourceable for EmojiKanBan {
     let mut ekb = Self {
       source: source.clone(),
       runtime: None,
-      update_oauth: Arc::new(Mutex::new(false)),
+      need_oauth_update: Arc::new(Mutex::new(false)),
+      need_config_file_update: Arc::new(Mutex::new(false)),
       config_data: None,
+      config_draft: EkbConfigUpdate::default(),
       config_handle: None,
       twitch_handle: None,
-      twitch_status: Disconnected,
+      twitch_status: InitConnection,
       oauth_tx: None,
       oauth_rx: None,
       emote_rx: None,
@@ -138,31 +144,18 @@ impl Sourceable for EmojiKanBan {
 
 impl EmojiKanBan {
   pub fn check_twitch_connection(&mut self) {
-    let update_oauth = self.update_oauth();
+    let need_oauth_update = self.need_oauth_update();
+    let need_config_file_update = self.need_config_file_update();
     match self.twitch_status {
-      Connected => {
-        if update_oauth {
-          self.twitch_status = AwaitingConfig;
-        }
-      }
-      Disconnected => {
-        if let Some(runtime) = self.runtime.as_mut() { // We have a runtime and now need to set up the Twitch connection
-          if !update_oauth {
-            if let Some(tx) = self.oauth_tx.as_ref() {
-              let tx = tx.clone();
-              if let Some(handle) = self.config_handle.take() {
-                handle.abort();
-              }
-              self.config_handle = Some(runtime.spawn(async move {
-                crate::get_or_create_config_emojikanban(EkbConfigUpdate::default(), tx).await;
-              }));
-              self.twitch_status = AwaitingConfig;
-            } else {
-              log::error!("Unexpected Error: check_twitch_connection expected self.oauth_tx to be Some(tx), which should have been created at the same time as self.runtime.");
-            }
-          } else {
+      InitConnection => {
+        if self.runtime.is_some() { // We have a runtime and now need to set up the Twitch connection
+          if need_oauth_update {
             self.twitch_status = AwaitingConfig;
-          }
+          } else if need_config_file_update {
+            self.twitch_status = ReloadConfig;
+          } else {
+            self.start_config_thread(EkbConfigUpdate::default());
+          } 
         } else { // We are not connected to Twitch and need to establish the runtime
           let runtime = tokio::runtime::Runtime::new().unwrap();
           let (oauth_tx, oauth_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -173,45 +166,34 @@ impl EmojiKanBan {
         }
       }
       AwaitingConfig => {
-        if let Some(runtime) = self.runtime.as_mut() {
-          if let Some(rx) = self.oauth_rx.as_mut() {
-            while let Ok(res) = rx.try_recv() {
-              match res {
-                OAuthToken(oauth) => {
-                  let oauth = { if update_oauth {
-                    EkbConfigUpdate {
-                      oauth: Some(oauth.to_owned()),
-                      ..Default::default()
-                    } 
-                  } else { EkbConfigUpdate::default() } };
-                  if let Ok(mut update_oauth) = self.update_oauth.lock() {
-                    *update_oauth = false;
-                  }
-                  if let Some(tx) = self.oauth_tx.as_ref() {
-                    let tx = tx.clone();
-                    self.config_handle = Some(runtime.spawn(async move {
-                      crate::get_or_create_config_emojikanban(oauth, tx).await;
-                    }));
-                  } else {
-                    log::error!("Unexpected Error: check_twitch_connection expected self.oauth_tx to be Some(tx), which should have been created at the same time as self.runtime.");
-                  }
-                }
-                NewConfigData(data) => {
-                  let bot_account: ObsString = data.1.bot_account().into();
-                  let channel: ObsString = data.1.channel().into();
-                  {
-                    let mut settings = self.source.get_settings();
-                    settings.set_string(obs_string!("twitch_bot_account"), bot_account);
-                    settings.set_string("twitch_channel", channel);
-                  }
-                  self.source.update_source_properties();
-                  self.config_data = Some(data);
-                }
-                RcvrError(e) => {
-                  log::error!("{}", e);
-                }
+        if self.runtime.is_some() {
+          if self.oauth_rx.is_some() {
+            while let Ok(res) = self.oauth_rx.as_mut().unwrap().try_recv() { match res {
+              OAuthToken(oauth) => {
+                let oauth = { if need_oauth_update {
+                  EkbConfigUpdate {
+                    oauth: Some(oauth.to_owned()),
+                    ..Default::default()
+                  } 
+                } else { EkbConfigUpdate::default() } };
+                self.disable_oauth_update();
+                self.start_config_thread(oauth);
               }
-            }
+              NewConfigData(data) => {
+                let bot_account: ObsString = data.1.bot_account().into();
+                let channel: ObsString = data.1.channel().into();
+                {
+                  let mut settings = self.source.get_settings();
+                  settings.set_string(obs_string!("twitch_bot_account"), bot_account);
+                  settings.set_string("twitch_channel", channel);
+                }
+                self.source.update_source_properties();
+                self.config_data = Some(data);
+              }
+              RcvrError(e) => {
+                log::error!("{}", e);
+              }
+            }}
           }
           if let Some((ekb_config_dirs, conf)) = self.config_data.take() {
             if let Some(handle) = self.twitch_handle.take() {
@@ -219,7 +201,7 @@ impl EmojiKanBan {
             }
             self.emote_rx.take();
             let (emote_tx, emote_rx) = tokio::sync::mpsc::unbounded_channel();
-            self.twitch_handle = Some(runtime.spawn(async move {
+            self.twitch_handle = Some(self.runtime.as_mut().unwrap().spawn(async move {
               crate::start_twitch_monitor(ekb_config_dirs, conf, emote_tx).await;
             }));
             self.emote_rx = Some(emote_rx);
@@ -227,12 +209,72 @@ impl EmojiKanBan {
           }
         }
       }
+      ReloadConfig => {
+        if self.config_draft.bot_account.is_some() || self.config_draft.channel.is_some() {
+          if self.runtime.is_some() {
+            self.start_config_thread(self.config_draft.clone());
+          } else {
+            unreachable!()
+          }
+        }
+      }
+      Connected => {
+        if need_config_file_update {
+          self.twitch_status = ReloadConfig;
+        } else if need_oauth_update {
+          self.twitch_status = AwaitingConfig;
+        }
+      }
     }
   }
-  pub fn update_oauth(&self) -> bool {
-    if let Ok(lock) = self.update_oauth.lock() {
+  fn start_config_thread(&mut self, ekb: EkbConfigUpdate) {
+    if let Some(runtime) = self.runtime.as_mut() {
+      if let Some(tx) = self.oauth_tx.as_ref() {
+        let tx = tx.clone();
+        if let Some(handle) = self.config_handle.take() {
+          handle.abort();
+        }
+        self.config_handle = Some(runtime.spawn(async move {
+          crate::get_or_create_config_emojikanban(ekb, tx).await;
+        }));
+        self.twitch_status = AwaitingConfig;
+      } else {
+        log::error!("Unexpected Error: check_twitch_connection expected self.oauth_tx to be Some(tx), which should have been created at the same time as self.runtime.");
+      }
+    }
+  }
+  // pub fn update_config_from_draft() {}
+  pub fn update_bot_account(&mut self, value: Cow<'_,str>) {
+    let value = validate_twitch_name(value);
+    if value.is_some() {
+      self.config_draft.bot_account = value;
+    }
+  }
+  pub fn update_channel(&mut self, value: Cow<'_,str>) {
+    let value = validate_twitch_name(value);
+    if value.is_some() {
+      self.config_draft.channel = value;
+    }
+  }
+  pub fn need_oauth_update(&self) -> bool {
+    if let Ok(lock) = self.need_oauth_update.lock() {
       return lock.deref().clone();
     } else { false }
+  }
+  pub fn disable_oauth_update(&mut self) {
+    if let Ok(mut update) = self.need_oauth_update.lock() {
+      *update = false;
+    }
+  }
+  pub fn need_config_file_update(&self) -> bool {
+    if let Ok(lock) = self.need_config_file_update.lock() {
+      return lock.deref().clone();
+    } else { false }
+  }
+  pub fn disable_config_file_update(&mut self) {
+    if let Ok(mut update) = self.need_config_file_update.lock() {
+      *update = false;
+    }
   }
 } // impl EmojiKanBan
 
@@ -262,7 +304,7 @@ impl GetPropertiesSource for EmojiKanBan {
     let mut props = Properties::new();
     if let Some(ref tx) = self.oauth_tx {
       let oauth_tx = tx.clone();
-      let update_oauth = self.update_oauth.clone();
+      let update_oauth = self.need_oauth_update.clone();
       props.add_button_with_refresh(
         "twitch_authenticate".into(),
         "Connect Twitch".into(),
@@ -285,6 +327,20 @@ impl GetPropertiesSource for EmojiKanBan {
               }
             }
           });
+        },
+      );
+    };
+    {
+      let update_config_file = self.need_config_file_update.clone();
+      props.add_button_with_refresh(
+        "twitch_config_update".into(),
+        "Connect Twitch".into(),
+        true,
+        move || {
+          log::info!("EmojiKanBan updating config.kdl with new bot-account/channel values.");
+          if let Ok(mut update) = update_config_file.lock() {
+            *update = true;
+          }
         },
       );
     };
@@ -333,12 +389,12 @@ impl GetPropertiesSource for EmojiKanBan {
 impl UpdateSource for EmojiKanBan {
   fn update(&mut self, settings: &mut DataObj, _context: &mut GlobalContext) {
     let data = self;
-    // if let Some(bot_account) = settings.get("twitch_bot_account".into()) {
-    //   data.update_bot_account(bot_account.into());
-    // }
-    // if let Some(channel) = settings.get("twitch_channel".into()) {
-    //   data.update_channel(channel.into());
-    // }
+    if let Some(bot_account) = settings.get(obs_string!("twitch_bot_account")) {
+      data.update_bot_account(bot_account);
+    }
+    if let Some(channel) = settings.get(obs_string!("twitch_channel")) {
+      data.update_channel(channel);
+    }
     if let Some(emotes_max) = settings.get(obs_string!("emotes_max")) {
       data.emote_queue_max_length = emotes_max;
     }
@@ -401,7 +457,7 @@ impl VideoTickSource for EmojiKanBan {
         }
         EmoteComEnum::TwitchConnectionFailure(e) => {
           log::error!("Twitch Connection Failure: {}", e.as_ref().as_ref().unwrap_err());
-          data.twitch_status = Disconnected;
+          data.twitch_status = InitConnection;
           data.twitch_handle.take();
         }
         EmoteComEnum::SqliteConnectionFailure(e) => {

@@ -5,6 +5,7 @@ use {
     KdlValue,
   },
   std::{
+    borrow::Cow,
     path::PathBuf,
     io::{BufRead, BufReader, Read, Write, },
     net::{TcpListener, TcpStream, },
@@ -142,6 +143,17 @@ impl EkbTwitchValues for KdlDocument {
       } else { return Err("oauth node has no fields".to_owned()); }
     } else { return Err("oauth node not present".to_owned()); }
   }
+}
+
+pub fn validate_twitch_name(value: Cow<'_,str>) -> Option<String> {
+  let value = value.trim().to_owned();
+  if value.is_empty()
+    || value.len() > 25
+    || !value.chars().all(|character| character.is_ascii_alphanumeric() || character == '_')
+  {
+    return None;
+  }
+  Some(value.to_ascii_lowercase())
 }
 
 pub const TWITCH_AUTH_URL: &str = "https://id.twitch.tv/oauth2/authorize?response_type=token&client_id=m0kk7y5gjs9qjfio2pw7hkw8iwaeft&redirect_uri=http://localhost:3000&scope=chat%3Aedit%20chat%3Aread";
