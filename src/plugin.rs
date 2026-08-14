@@ -147,7 +147,7 @@ impl EmojiKanBan {
       self.disable_config_file_update();
       let update = std::mem::take(&mut self.config_draft);
       if update.bot_account.is_some() || update.channel.is_some() {
-        if let Err(update) = self.start_config_thread(self.config_draft.clone()) {
+        if let Err(update) = self.start_config_thread(update) {
           self.config_draft = update;
         };
         return;
