@@ -55,7 +55,6 @@ pub enum TwitchOAuthRcvr {
 enum TwitchConnectionStatus {
   InitConnection,
   AwaitingConfig,
-  ReloadConfig,
   Connected,
 }
 
@@ -144,17 +143,27 @@ impl Sourceable for EmojiKanBan {
 
 impl EmojiKanBan {
   pub fn check_twitch_connection(&mut self) {
+    if self.need_config_file_update() {
+      self.disable_config_file_update();
+      let update = std::mem::take(&mut self.config_draft);
+      if update.bot_account.is_some() || update.channel.is_some() {
+        if let Err(update) = self.start_config_thread(self.config_draft.clone()) {
+          self.config_draft = update;
+        };
+        return;
+      }
+      log::info!("Config File Update requested but there are no valid changes.");
+    }
     let need_oauth_update = self.need_oauth_update();
-    let need_config_file_update = self.need_config_file_update();
     match self.twitch_status {
       InitConnection => {
         if self.runtime.is_some() { // We have a runtime and now need to set up the Twitch connection
           if need_oauth_update {
             self.twitch_status = AwaitingConfig;
-          } else if need_config_file_update {
-            self.twitch_status = ReloadConfig;
           } else {
-            self.start_config_thread(EkbConfigUpdate::default());
+            if let Err(_) = self.start_config_thread(EkbConfigUpdate::default()) {
+              log::error!("start_config_thread failed with default values.");
+            };
           } 
         } else { // We are not connected to Twitch and need to establish the runtime
           let runtime = tokio::runtime::Runtime::new().unwrap();
@@ -177,7 +186,9 @@ impl EmojiKanBan {
                   } 
                 } else { EkbConfigUpdate::default() } };
                 self.disable_oauth_update();
-                self.start_config_thread(oauth);
+                if let Err(_) = self.start_config_thread(oauth) {
+                  log::error!("start_config_thread failed with new oauth data.")
+                };
               }
               NewConfigData(data) => {
                 let bot_account: ObsString = data.1.bot_account().into();
@@ -209,25 +220,14 @@ impl EmojiKanBan {
           }
         }
       }
-      ReloadConfig => {
-        self.disable_config_file_update();
-        let update = std::mem::take(&mut self.config_draft);
-        if update.bot_account.is_some() || update.channel.is_some() {
-          self.start_config_thread(self.config_draft.clone());
-        } else {
-          self.twitch_status = Connected;
-        }
-      }
       Connected => {
-        if need_config_file_update {
-          self.twitch_status = ReloadConfig;
-        } else if need_oauth_update {
+        if need_oauth_update {
           self.twitch_status = AwaitingConfig;
         }
       }
     }
   }
-  fn start_config_thread(&mut self, ekb: EkbConfigUpdate) {
+  fn start_config_thread(&mut self, ekb: EkbConfigUpdate) -> Result<(),EkbConfigUpdate> {
     if let Some(runtime) = self.runtime.as_mut() {
       if let Some(tx) = self.oauth_tx.as_ref() {
         let tx = tx.clone();
@@ -238,9 +238,14 @@ impl EmojiKanBan {
           crate::get_or_create_config_emojikanban(ekb, tx).await;
         }));
         self.twitch_status = AwaitingConfig;
+        Ok(())
       } else {
-        log::error!("Unexpected Error: check_twitch_connection expected self.oauth_tx to be Some(tx), which should have been created at the same time as self.runtime.");
+        log::error!("Unexpected Error: start_config_thread expected self.oauth_tx to be Some(tx), which should have been created at the same time as self.runtime.");
+        return Err(ekb);
       }
+    } else {
+      log::error!("start_config_thread run with no runtime available.");
+      return Err(ekb);
     }
   }
   // pub fn update_config_from_draft() {}
