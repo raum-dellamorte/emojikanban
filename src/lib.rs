@@ -354,10 +354,10 @@ async fn validate_config(mut config_path: PathBuf, data_path: PathBuf, conf: Str
               let bot_account = conf.bot_account();
               let channel = conf.channel();
               let bot_valid = client.get_channel_from_login(&bot_account, &token).await
-                .expect("Failure awaiting client.get_channel_from_login for bot account.");
+                .map_err(|e| { anyhow!("Failure awaiting client.get_channel_from_login for bot account. {}", e) });
               let chn_valid = client.get_channel_from_login(&channel, &token).await
-                .expect("Failure awaiting client.get_channel_from_login for streamer channel.");
-              if bot_valid.is_some() && chn_valid.is_some() {
+                .map_err(|e| { anyhow!("Failure awaiting client.get_channel_from_login for streamer channel. {}", e) });
+              if bot_valid.is_ok() && bot_valid.as_ref().unwrap().is_some() && chn_valid.is_ok() && chn_valid.as_ref().unwrap().is_some() {
                 if write_changes && let Err(e) = std::fs::write(&config_path, doc.to_string()) {
                   log::error!("Failed to write new values to {}\nValues will not be retained after this session.\nError: {}", config_path.display(), e);
                 }
