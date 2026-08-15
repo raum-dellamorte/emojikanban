@@ -200,8 +200,8 @@ impl EmojiKanBan {
                     settings.set_string("twitch_channel", channel);
                   }
                   source.update_source_properties();
-                  self.config_data = Some(data);
                 }
+                self.config_data = Some(data);
               }
               RcvrError(e) => {
                 log::error!("{}", e);
