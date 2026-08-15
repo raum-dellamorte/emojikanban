@@ -323,16 +323,10 @@ impl GetPropertiesSource for EmojiKanBan {
               *update_oauth = true;
             }
             let oauth_tx = oauth_tx.clone();
-            move || {
-              match serve_oauth_receiver() {
-                Ok(oauth) => {
-                  _ = oauth_tx.send(TwitchOAuthRcvr::OAuthToken(oauth));
-                }
-                Err(e) => {
-                  _ = oauth_tx.send(TwitchOAuthRcvr::RcvrError(e.into()));
-                }
-              }
-            }
+            move || { match serve_oauth_receiver() {
+              Ok(oauth) => { _ = oauth_tx.send(TwitchOAuthRcvr::OAuthToken(oauth)); }
+              Err(e) => { _ = oauth_tx.send(TwitchOAuthRcvr::RcvrError(e.into())); }
+            }}
           });
         },
       );
