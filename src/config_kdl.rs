@@ -151,6 +151,7 @@ pub fn validate_twitch_name(value: Cow<'_,str>) -> Option<String> {
 }
 
 pub const TWITCH_AUTH_URL: &str = "https://id.twitch.tv/oauth2/authorize?response_type=token&client_id=m0kk7y5gjs9qjfio2pw7hkw8iwaeft&redirect_uri=http://localhost:3000&scope=chat%3Aedit%20chat%3Aread";
+pub const TWITCH_CALLBACK_URL: &str = "http://localhost:3000/";
 
 pub const CALLBACK_PAGE: &str = r#"<!doctype html>
 <html lang="en">

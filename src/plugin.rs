@@ -3,6 +3,7 @@ use {
     EmoteComEnum, EmoteData,
     config_kdl::{
       EkbConfigDirs, EkbConfigUpdate, EkbTwitchConfig,
+      TWITCH_CALLBACK_URL,
       serve_oauth_receiver, validate_twitch_name,
     },
     effects::*,
@@ -319,6 +320,10 @@ impl GetPropertiesSource for EmojiKanBan {
         move || {
           log::info!("EmojiKanBan attempting to (re)authenticate Twitch for access to chat. Server starting on http://localhost:3000/");
           std::thread::spawn({
+            match open::that(TWITCH_CALLBACK_URL) {
+              Ok(()) => {}
+              Err(e) => { log::error!("Failed to open http://localhost:3000/ to acquire a Twitch OAuth Token. Please navigate manually to that address.\nError: {}", e) }
+            }
             if let Ok(mut update_oauth) = update_oauth.lock() {
               *update_oauth = true;
             }
