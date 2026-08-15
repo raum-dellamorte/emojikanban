@@ -314,7 +314,7 @@ impl GetPropertiesSource for EmojiKanBan {
       let update_oauth = self.need_oauth_update.clone();
       props.add_button_with_refresh(
         "twitch_authenticate".into(),
-        "Connect Twitch".into(),
+        "Request New Twitch OAuth Token And Connect".into(),
         true,
         move || {
           log::info!("EmojiKanBan attempting to (re)authenticate Twitch for access to chat. Server starting on http://localhost:3000/");
