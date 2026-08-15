@@ -18,7 +18,13 @@ About The Name
 Status:
 =======
 
+Version 0.2.0 as of 2026-08-14
+
 Now with FlatPak support!
+
+Can be connected to Twitch from Properties menu!
+
+I've written a lot of things in this readme.md and I've tried to keep it up to date, but no promises.
 
 __Effects:__
 - [x] Gravity: 70% : Emote spawns at the top of the screen, falls, and bounces with a life between 2 and 5 seconds.
