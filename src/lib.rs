@@ -47,6 +47,7 @@ use {
 
 pub mod config_kdl;
 pub mod effects;
+pub mod font_studio;
 pub mod plugin;
 
 const PROMOTE_DEBUG_LOGS: bool = false;

@@ -7,6 +7,7 @@ use {
       serve_oauth_receiver, validate_twitch_name,
     },
     effects::*,
+    font_studio::*,
     plugin::{
       TwitchConnectionStatus::*, TwitchOAuthRcvr::*,
     },
@@ -74,6 +75,7 @@ pub struct EmojiKanBan {
   emote_rx: Option<UnboundedReceiver<EmoteComEnum>>, // EmoteData -> anyhow::Result<EmoteData, String> to return error to try to reconnect to Twitch
   emote_queue: VecDeque<EmoteOBS>,
   emote_queue_max_length: u32,
+  font_studio: FontStudio,
   rng: ThreadRng,
   screen_w: u32,
   screen_h: u32,
@@ -114,6 +116,9 @@ impl Sourceable for EmojiKanBan {
     let screen_offset_x = settings.get(obs_string!("offset_x")).unwrap_or(0);
     let screen_offset_y = settings.get(obs_string!("offset_y")).unwrap_or(0);
     
+    let mut font_studio = FontStudio::new();
+    font_studio.add_text_block(500, (50,50), (36.0,40.0), Some(15.0), "emojiKanBan Loaded");
+    
     source.update_source_settings(settings);
     
     let mut ekb = Self {
@@ -131,6 +136,7 @@ impl Sourceable for EmojiKanBan {
       emote_rx: None,
       emote_queue: vec![].into(),
       emote_queue_max_length,
+      font_studio,
       rng: rand::rng(),
       screen_w,
       screen_h,
@@ -477,6 +483,10 @@ impl VideoTickSource for EmojiKanBan {
     }
     // Keep only the living
     data.emote_queue.retain(|emote| emote.is_alive() );
+    for tblk in data.font_studio.text_blocks.iter_mut() {
+      tblk.update(seconds);
+    }
+    data.font_studio.text_blocks.retain(|tblk| tblk.is_alive() );
   }
 }
 
@@ -494,6 +504,7 @@ impl VideoRenderSource for EmojiKanBan {
           effect.draw(emote.current_frame());
         }
       }
+      self.font_studio.draw();
       obs_leave_graphics();
     }
   }
@@ -501,7 +512,7 @@ impl VideoRenderSource for EmojiKanBan {
 
 pub struct EmoteOBS {
   pub name: String,
-  tex_vec: Vec<GraphicsTexture>, // Make this a Vec<GraphicsTexture> to support animation
+  tex_vec: Vec<GraphicsTexture>,
   delay: Vec<f32>,
   frame: usize,
   pub frame_time: f32,
