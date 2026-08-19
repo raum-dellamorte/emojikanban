@@ -21,7 +21,7 @@ fi
 # writable home directory.
 export ZIG_GLOBAL_CACHE_DIR="$PWD/target/zig-cache"
 export RUSTFLAGS="${RUSTFLAGS:-} -A linker_messages"
-export DONT_USE_GENERATED_BINDINGS=1
+# export DONT_USE_GENERATED_BINDINGS=1
 
 cargo zigbuild --release --lib --target "$ZIG_TARGET"
 
