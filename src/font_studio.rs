@@ -77,15 +77,15 @@ impl FontStudio {
     let (x_offset, y_offset) = offset;
     let text_color = Color::rgb(0xFF, 0xFF, 0xFF);
     let img_w = image_width.max(MIN_WIDTH);
-    let inner_w = img_w - (2 * PADDING);
+    let inner_w = img_w - (2 * self.chat_margin as u32);
     buffer.set_size(Some(inner_w as f32), None);
     buffer.set_metrics(Metrics::new(metrics.0, metrics.1));
     buffer.set_text(txt, &self.attrs.as_attrs(), Shaping::Advanced, None);
     buffer.shape_until_scroll(false);
     let img_h = buffer.layout_runs().map(|run| run.line_top + run.line_height)
-      .fold(0.0f32, f32::max).ceil() as u32 + (2 * PADDING);
+      .fold(0.0f32, f32::max).ceil() as u32 + (2 * self.chat_margin as u32);
     let mut img = RgbaImage::from_pixel(img_w, img_h, Rgba([0,0,0,0]));
-    buffer.draw(&mut self.swash_cache, text_color, draw_buffer(&mut img, PADDING as i32));
+    buffer.draw(&mut self.swash_cache, text_color, draw_buffer(&mut img, self.chat_margin));
     let tex = gen_rgba_tex(img);
     let tblk = TextBlock { tex, life, x_offset, y_offset, };
     self.text_blocks.push_back(tblk);
@@ -120,10 +120,10 @@ impl FontStudio {
     );
     buffer.shape_until_scroll(false);
     let img_h = buffer.layout_runs().map(|run| run.line_top + run.line_height)
-      .fold(0.0f32, f32::max).ceil() as u32 + (2 * PADDING);
+      .fold(0.0f32, f32::max).ceil() as u32 + (2 * self.chat_margin as u32);
     let mut usr_img = RgbaImage::from_pixel(img_w, img_h, Rgba([0,0,0,0]));
     let text_color = Color::rgb(0xFF, 0xFF, 0xFF);
-    buffer.draw(&mut self.swash_cache, text_color, draw_buffer(&mut usr_img, PADDING as i32));
+    buffer.draw(&mut self.swash_cache, text_color, draw_buffer(&mut usr_img, self.chat_margin));
     let usr_tex = gen_rgba_tex(usr_img);
     // Generate chat message image
     let msg_string: String = if msg.emotes.len() == 0 { msg.msg.to_owned() } else {
@@ -147,7 +147,7 @@ impl FontStudio {
       buffer.set_text(msg_txt, &msg_attrs, Shaping::Advanced, None);
       buffer.shape_until_scroll(false);
       buffer.layout_runs().map(|run| run.line_top + run.line_height)
-        .fold(0.0f32, f32::max).ceil() as u32 + (2 * PADDING)
+        .fold(0.0f32, f32::max).ceil() as u32 + (2 * self.chat_margin as u32)
     } else {
       let mut parts = msg_string.split(EMOTE_PLACEHOLDER).peekable();
       let mut spans = Vec::new();
@@ -180,7 +180,7 @@ impl FontStudio {
       // }
       // out.ceil() as u32 + (2 * PADDING)
       buffer.layout_runs().map(|run| run.line_top + run.line_height)
-        .fold(0.0f32, f32::max).ceil() as u32 + (2 * PADDING)
+        .fold(0.0f32, f32::max).ceil() as u32 + (2 * self.chat_margin as u32)
     };
     let mut msg_img = RgbaImage::from_pixel(inner_w, img_h, Rgba([0,0,0,0]));
     let text_color = Color::rgb(0xFF, 0xFF, 0xFF);
@@ -337,7 +337,6 @@ fn create_chat_bg(width: u32, height: u32, rounding: f32, bg: [u8;4]) -> RgbaIma
 #[allow(dead_code)]
 const EMOTE_PLACEHOLDER: &str = "\u{2003}";
 const MSG_PTR: &str = "~> ";
-const PADDING: u32 = 10;
 const MIN_WIDTH: u32 = 40;
 pub const LOREM_IPSUM: &str = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, \
 sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim \
