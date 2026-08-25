@@ -218,36 +218,6 @@ impl FontStudio {
     let text_color = Color::rgb(0xFF, 0xFF, 0xFF);
     buffer.draw(&mut self.swash_cache, text_color, draw_buffer(&mut msg_img, self.chat_margin));
     let msg_img = add_text_outline(&msg_img, 2, Rgba([170,0,0,255]));
-    // Draw the emotes in chat, static for now
-    // for (emote,pos) in msg.emotes.iter().zip(emote_pos) {
-    //   let Some((x,y)) = pos else {
-    //     log::error!("No layout position was produced for emote {}", emote.name );
-    //     continue;
-    //   };
-    //   let emote_image = match image::load_from_memory(&emote.img) {
-    //     Ok(image) => image.to_rgba8(),
-    //     Err(error) => {
-    //       log::error!(
-    //         "Failed to decode inline emote {}: {}",
-    //         emote.name,
-    //         error,
-    //       );
-    //       continue;
-    //     }
-    //   };
-    //   let emote_image = resize(
-    //     &emote_image,
-    //     emote_size,
-    //     emote_size,
-    //     FilterType::Lanczos3,
-    //   );
-    //   overlay(
-    //     &mut msg_img,
-    //     &emote_image,
-    //     i64::from(x),
-    //     i64::from(y),
-    //   );
-    // }
     let msg_tex = gen_rgba_tex(msg_img);
     let cblk = ChatMsgBlock {
       usr_tex, msg_tex, inline_emotes, emote_size, life: Some(self.chat_life),
