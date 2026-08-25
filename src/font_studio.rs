@@ -18,11 +18,12 @@ pub struct FontStudio {
   swash_cache: SwashCache,
   buffer: Buffer,
   attrs: AttrsOwned,
-  pub text_blocks: Box<VecDeque<TextBlock>>,
-  pub chat_blocks: Box<VecDeque<ChatMsgBlock>>,
+  pub text_blocks: VecDeque<TextBlock>,
+  pub chat_blocks: VecDeque<ChatMsgBlock>,
   screen_w: f32,
   screen_h: f32,
-  chat_bg_tex: Option<Box<GraphicsTexture>>,
+  user_metrics: (f32,f32),
+  chat_bg_tex: Option<GraphicsTexture>,
   chat_life: f32,
   chat_offset: (i32,i32),
   chat_metrics: (f32,f32),
@@ -38,16 +39,17 @@ impl FontStudio {
     let attrs = Attrs::new();
     let attrs = AttrsOwned::new(&attrs);
     let cbg_img = create_chat_bg(300,700,20.0,[10,50,10,179]);
-    let chat_bg_tex = Some(Box::new(gen_rgba_tex(cbg_img)));
+    let chat_bg_tex = Some(gen_rgba_tex(cbg_img));
     Self {
       font_system,
       swash_cache,
       buffer,
       attrs,
-      text_blocks: Box::new(VecDeque::new()),
-      chat_blocks: Box::new(VecDeque::new()),
+      text_blocks: VecDeque::new(),
+      chat_blocks: VecDeque::new(),
       screen_w: 1920.0, // probably fixme
       screen_h: 1080.0,
+      user_metrics: (26.0, 30.0),
       chat_bg_tex,
       chat_life: 120.0,
       chat_offset: (1620,0),
@@ -100,7 +102,7 @@ impl FontStudio {
     let user_attrs = Attrs::new()
       .color(msg.uname_color.unwrap_or(Color::rgb(0xC8, 0x64, 0xC8)))
       .font_features(FontFeatures::new().enable(FeatureTag::SMALL_CAPS).to_owned())
-      .metrics(Metrics::new(26.0,30.0))
+      .metrics(Metrics::new(self.user_metrics.0, self.user_metrics.1))
       .weight(Weight::BOLD);
     let msg_ptr_attrs = Attrs::new()
       .color(Color::rgb(0x36, 0x87, 0x77))
@@ -186,7 +188,12 @@ impl FontStudio {
     let text_color = Color::rgb(0xFF, 0xFF, 0xFF);
     buffer.draw(&mut self.swash_cache, text_color, draw_buffer(&mut msg_img, self.chat_margin));
     let msg_tex = gen_rgba_tex(msg_img);
-    let cblk = ChatMsgBlock { usr_tex, msg_tex, chat_data: msg, life: Some(self.chat_life), x_offset, y_offset, msg_indent: self.chat_metrics.1 as i32 + self.chat_margin };
+    let cblk = ChatMsgBlock {
+      usr_tex, msg_tex, chat_data: msg, life: Some(self.chat_life),
+      x_offset, y_offset,
+      msg_y_offset: self.user_metrics.1 as i32,
+      msg_indent: self.chat_metrics.1 as i32 + self.chat_margin
+    };
     self.chat_blocks.push_back(cblk);
   }
   pub fn draw(&self) {
@@ -218,19 +225,20 @@ pub struct ChatMsgBlock {
   life: Option<f32>,
   pub x_offset: i32,
   pub y_offset: i32,
+  msg_y_offset: i32,
   msg_indent: i32,
 }
 
 impl FontStudioTextBlock for ChatMsgBlock {
   fn draw(&self) {
     self.usr_tex.draw(self.x_offset, self.y_offset, 0, 0, false);
-    self.msg_tex.draw(self.x_offset + self.msg_indent, self.y_offset + 40, 0, 0, false);
+    self.msg_tex.draw(self.x_offset + self.msg_indent, self.y_offset + self.msg_y_offset, 0, 0, false);
   }
   fn is_alive(&self) -> bool {
-    self.life.is_none() || (self.life.is_some() && self.life.unwrap() > 0.0)
+    self.life.is_none_or(|life| life > 0.0)
   }
   fn height(&self) -> u32 {
-    self.usr_tex.height() / 2 + self.msg_tex.height()
+    self.msg_y_offset as u32 + self.msg_tex.height()
   }
   fn update(&mut self, seconds: f32) {
     if let Some(life) = self.life.as_mut() {
@@ -257,7 +265,7 @@ impl FontStudioTextBlock for TextBlock {
     self.tex.draw(self.x_offset, self.y_offset, 0, 0, false);
   }
   fn is_alive(&self) -> bool {
-    self.life.is_none() || (self.life.is_some() && self.life.unwrap() > 0.0)
+    self.life.is_none_or(|life| life > 0.0)
   }
   fn height(&self) -> u32 {
     self.tex.height()
@@ -334,7 +342,6 @@ fn create_chat_bg(width: u32, height: u32, rounding: f32, bg: [u8;4]) -> RgbaIma
   image
 }
 
-#[allow(dead_code)]
 const EMOTE_PLACEHOLDER: &str = "\u{2003}";
 const MSG_PTR: &str = "~> ";
 const MIN_WIDTH: u32 = 40;
