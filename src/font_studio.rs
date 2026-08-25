@@ -189,6 +189,7 @@ impl FontStudio {
     let mut msg_img = RgbaImage::from_pixel(inner_w, img_h, Rgba([0,0,0,0]));
     let text_color = Color::rgb(0xFF, 0xFF, 0xFF);
     buffer.draw(&mut self.swash_cache, text_color, draw_buffer(&mut msg_img, self.chat_margin));
+    let msg_img = add_text_outline(&msg_img, 2, Rgba([170,0,0,255]));
     let msg_tex = gen_rgba_tex(msg_img);
     let cblk = ChatMsgBlock {
       usr_tex, msg_tex, chat_data: msg, life: Some(self.chat_life),
@@ -342,6 +343,80 @@ fn create_chat_bg(width: u32, height: u32, rounding: f32, bg: [u8;4]) -> RgbaIma
     }
   }
   image
+}
+
+fn add_text_outline(
+  text: &RgbaImage,
+  radius: u32,
+  outline_color: Rgba<u8>,
+) -> RgbaImage {
+  let mut outlined =
+      RgbaImage::from_pixel(text.width(), text.height(), Rgba([0, 0, 0, 0]));
+  let radius = radius as i32;
+  let radius_squared = radius * radius;
+  // Dilate the text's alpha mask.
+  for y in 0..text.height() as i32 {
+    for x in 0..text.width() as i32 {
+      let mut outline_alpha = 0_u8;
+      for offset_y in -radius..=radius {
+        for offset_x in -radius..=radius {
+          if offset_x * offset_x + offset_y * offset_y > radius_squared {
+            continue;
+          }
+          let sample_x = x + offset_x;
+          let sample_y = y + offset_y;
+          if sample_x < 0
+            || sample_y < 0
+            || sample_x >= text.width() as i32
+            || sample_y >= text.height() as i32
+          {
+            continue;
+          }
+          outline_alpha = outline_alpha.max(
+              text.get_pixel(sample_x as u32, sample_y as u32)[3],
+          );
+        }
+      }
+      let alpha = ( u16::from(outline_alpha) * u16::from(outline_color[3]) / 255 ) as u8;
+      outlined.put_pixel(
+        x as u32,
+        y as u32,
+        Rgba([
+          outline_color[0],
+          outline_color[1],
+          outline_color[2],
+          alpha,
+        ]),
+      );
+    }
+  }
+  // Draw the original antialiased text over the outline.
+  for (x, y, source) in text.enumerate_pixels() {
+    alpha_over(outlined.get_pixel_mut(x, y), *source);
+  }
+  outlined
+}
+
+fn alpha_over(destination: &mut Rgba<u8>, source: Rgba<u8>) {
+  let source_alpha = source[3] as f32 / 255.0;
+  let destination_alpha = destination[3] as f32 / 255.0;
+  let output_alpha = source_alpha + destination_alpha * (1.0 - source_alpha);
+  if output_alpha <= 0.0 {
+    *destination = Rgba([0, 0, 0, 0]);
+    return;
+  }
+  for channel in 0..3 {
+    let source_color = source[channel] as f32 / 255.0;
+    let destination_color = destination[channel] as f32 / 255.0;
+    let output_color = (
+      source_color * source_alpha
+      + destination_color
+      * destination_alpha
+      * (1.0 - source_alpha)
+    ) / output_alpha;
+    destination[channel] = (output_color * 255.0).round() as u8;
+  }
+  destination[3] = (output_alpha * 255.0).round() as u8;
 }
 
 const EMOTE_PLACEHOLDER: &str = "\u{2003}";
