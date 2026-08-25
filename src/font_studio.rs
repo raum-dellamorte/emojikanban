@@ -123,6 +123,8 @@ impl FontStudio {
     buffer.shape_until_scroll(false);
     let img_h = buffer.layout_runs().map(|run| run.line_top + run.line_height)
       .fold(0.0f32, f32::max).ceil() as u32 + (2 * self.chat_margin as u32);
+    let msg_indent: i32 = buffer.layout_runs().last().map(|run| run.line_w.ceil() as i32 )
+        .unwrap_or(0) + self.chat_margin;
     let mut usr_img = RgbaImage::from_pixel(img_w, img_h, Rgba([0,0,0,0]));
     let text_color = Color::rgb(0xFF, 0xFF, 0xFF);
     buffer.draw(&mut self.swash_cache, text_color, draw_buffer(&mut usr_img, self.chat_margin));
@@ -144,7 +146,7 @@ impl FontStudio {
     let msg_txt: &str = &msg_string;
     let msg_attrs = Attrs::new().color(Color::rgb(0xC8, 0xC8, 0xC8));
     let emote_attrs = Attrs::new().color(Color::rgba(0, 0, 0, 0));
-    buffer.set_size(Some((inner_w - (self.chat_metrics.1 as u32 * 2)) as f32), None);
+    buffer.set_size(Some((inner_w as i32 - msg_indent) as f32), None);
     let img_h = if msg.emotes.len() == 0 {
       buffer.set_text(msg_txt, &msg_attrs, Shaping::Advanced, None);
       buffer.shape_until_scroll(false);
@@ -192,7 +194,7 @@ impl FontStudio {
       usr_tex, msg_tex, chat_data: msg, life: Some(self.chat_life),
       x_offset, y_offset,
       msg_y_offset: self.user_metrics.1 as i32,
-      msg_indent: self.chat_metrics.1 as i32 + self.chat_margin
+      msg_indent, 
     };
     self.chat_blocks.push_back(cblk);
   }
