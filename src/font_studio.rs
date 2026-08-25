@@ -1,16 +1,19 @@
 // #![allow(dead_code,unused)]
 use {
-  crate::ChatData,
+  crate::{
+    ChatData,
+    plugin::EmoteOBS,
+  },
   cosmic_text::{
     Attrs, AttrsOwned, Buffer, Color, FeatureTag, FontFeatures, FontSystem, Metrics, Shaping, SwashCache, Weight,
   },
   image::{
     // AnimationDecoder, DynamicImage, ImageFormat,
     Rgba, RgbaImage,
-    imageops::{
-      FilterType,
-      resize, overlay,
-    }
+    // imageops::{
+    //   FilterType,
+    //   resize, overlay,
+    // }
     // codecs::gif::GifDecoder,
   },
   obs_wrapper::graphics::*,
@@ -133,7 +136,9 @@ impl FontStudio {
     let text_color = Color::rgb(0xFF, 0xFF, 0xFF);
     buffer.draw(&mut self.swash_cache, text_color, draw_buffer(&mut usr_img, self.chat_margin));
     let usr_tex = gen_rgba_tex(usr_img);
+    // 
     // Generate chat message image
+    // 
     let msg_string: String = if msg.emotes.len() == 0 { msg.msg.to_owned() } else {
       let mut filtered = String::with_capacity(msg.msg.len());
       let mut i = 0;
@@ -197,43 +202,55 @@ impl FontStudio {
       }
       out.ceil() as u32 + (2 * self.chat_margin as u32)
     };
+    let inline_emotes = msg.emotes.iter().cloned().zip(emote_pos.clone()).filter_map(|(emote_data, pos)| {
+      let local = pos?;
+      let emote: EmoteOBS = emote_data.into();
+      if !emote.has_frames() {
+        log::error!(
+          "No decoded frames for inline emote {}",
+          emote.name,
+        );
+        return None;
+      }
+      Some(ChatInlineEmote {emote, local})
+    }).collect();
     let mut msg_img = RgbaImage::from_pixel(inner_w, img_h, Rgba([0,0,0,0]));
     let text_color = Color::rgb(0xFF, 0xFF, 0xFF);
     buffer.draw(&mut self.swash_cache, text_color, draw_buffer(&mut msg_img, self.chat_margin));
-    let mut msg_img = add_text_outline(&msg_img, 2, Rgba([170,0,0,255]));
+    let msg_img = add_text_outline(&msg_img, 2, Rgba([170,0,0,255]));
     // Draw the emotes in chat, static for now
-    for (emote,pos) in msg.emotes.iter().zip(emote_pos) {
-      let Some((x,y)) = pos else {
-        log::error!("No layout position was produced for emote {}", emote.name );
-        continue;
-      };
-      let emote_image = match image::load_from_memory(&emote.img) {
-        Ok(image) => image.to_rgba8(),
-        Err(error) => {
-          log::error!(
-            "Failed to decode inline emote {}: {}",
-            emote.name,
-            error,
-          );
-          continue;
-        }
-      };
-      let emote_image = resize(
-        &emote_image,
-        emote_size,
-        emote_size,
-        FilterType::Lanczos3,
-      );
-      overlay(
-        &mut msg_img,
-        &emote_image,
-        i64::from(x),
-        i64::from(y),
-      );
-    }
+    // for (emote,pos) in msg.emotes.iter().zip(emote_pos) {
+    //   let Some((x,y)) = pos else {
+    //     log::error!("No layout position was produced for emote {}", emote.name );
+    //     continue;
+    //   };
+    //   let emote_image = match image::load_from_memory(&emote.img) {
+    //     Ok(image) => image.to_rgba8(),
+    //     Err(error) => {
+    //       log::error!(
+    //         "Failed to decode inline emote {}: {}",
+    //         emote.name,
+    //         error,
+    //       );
+    //       continue;
+    //     }
+    //   };
+    //   let emote_image = resize(
+    //     &emote_image,
+    //     emote_size,
+    //     emote_size,
+    //     FilterType::Lanczos3,
+    //   );
+    //   overlay(
+    //     &mut msg_img,
+    //     &emote_image,
+    //     i64::from(x),
+    //     i64::from(y),
+    //   );
+    // }
     let msg_tex = gen_rgba_tex(msg_img);
     let cblk = ChatMsgBlock {
-      usr_tex, msg_tex, chat_data: msg, life: Some(self.chat_life),
+      usr_tex, msg_tex, inline_emotes, emote_size, life: Some(self.chat_life),
       x_offset, y_offset,
       msg_y_offset: self.user_metrics.1 as i32,
       msg_indent, 
@@ -265,7 +282,8 @@ pub trait FontStudioTextBlock {
 pub struct ChatMsgBlock {
   usr_tex: GraphicsTexture,
   msg_tex: GraphicsTexture,
-  pub chat_data: ChatData,
+  inline_emotes: Vec<ChatInlineEmote>,
+  emote_size: u32,
   life: Option<f32>,
   pub x_offset: i32,
   pub y_offset: i32,
@@ -276,7 +294,14 @@ pub struct ChatMsgBlock {
 impl FontStudioTextBlock for ChatMsgBlock {
   fn draw(&self) {
     self.usr_tex.draw(self.x_offset, self.y_offset, 0, 0, false);
-    self.msg_tex.draw(self.x_offset + self.msg_indent, self.y_offset + self.msg_y_offset, 0, 0, false);
+    let msg_global_x = self.x_offset + self.msg_indent;
+    let msg_global_y = self.y_offset + self.msg_y_offset;
+    self.msg_tex.draw(msg_global_x, msg_global_y, 0, 0, false);
+    for emote in self.inline_emotes.iter() {
+      let (x,y) = emote.local;
+      emote.emote.current_frame().draw(
+        msg_global_x + x, msg_global_y + y, self.emote_size, self.emote_size, false);
+    }
   }
   fn is_alive(&self) -> bool {
     self.life.is_none_or(|life| life > 0.0)
@@ -288,6 +313,9 @@ impl FontStudioTextBlock for ChatMsgBlock {
     if let Some(life) = self.life.as_mut() {
       *life -= seconds;
     }
+    for emote in self.inline_emotes.iter_mut() {
+      emote.emote.update(seconds);
+    }
   }
   fn set_x(&mut self, val: i32) {
     self.x_offset = val;
@@ -295,6 +323,11 @@ impl FontStudioTextBlock for ChatMsgBlock {
   fn set_y(&mut self, val: i32) {
     self.y_offset = val;
   }
+}
+
+pub struct ChatInlineEmote {
+  emote: EmoteOBS,
+  local: (i32, i32),
 }
 
 pub struct TextBlock {

@@ -529,6 +529,9 @@ impl EmoteOBS {
       }
     }
   }
+  pub fn has_frames(&self) -> bool {
+    !self.tex_vec.is_empty()
+  }
   pub fn current_frame(&self) -> &GraphicsTexture {
     &self.tex_vec[self.frame]
   }
