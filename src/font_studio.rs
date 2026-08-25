@@ -241,7 +241,7 @@ impl FontStudio {
     self.chat_blocks.push_back(cblk);
   }
   pub fn draw(&self) {
-    if let Some(bg) = self.chat_bg_tex.as_ref() {
+    if !self.chat_blocks.is_empty() && let Some(bg) = self.chat_bg_tex.as_ref() {
       bg.draw(self.chat_offset.0, self.chat_offset.1, 0, 0, false);
     }
     for tblk in self.text_blocks.iter() {
