@@ -7,6 +7,10 @@ use {
   image::{
     // AnimationDecoder, DynamicImage, ImageFormat,
     Rgba, RgbaImage,
+    imageops::{
+      FilterType,
+      resize, overlay,
+    }
     // codecs::gif::GifDecoder,
   },
   obs_wrapper::graphics::*,
@@ -147,6 +151,9 @@ impl FontStudio {
     let msg_attrs = Attrs::new().color(Color::rgb(0xC8, 0xC8, 0xC8));
     let emote_attrs = Attrs::new().color(Color::rgba(0, 0, 0, 0));
     buffer.set_size(Some((inner_w as i32 - msg_indent) as f32), None);
+    let emote_size = self.chat_metrics.1.ceil() as u32;
+    let emote_size = emote_size.saturating_sub(1);
+    let mut emote_pos = vec![None;msg.emotes.len()];
     let img_h = if msg.emotes.len() == 0 {
       buffer.set_text(msg_txt, &msg_attrs, Shaping::Advanced, None);
       buffer.shape_until_scroll(false);
@@ -172,24 +179,58 @@ impl FontStudio {
         None,
       );
       buffer.shape_until_scroll(false);
-      // let mut out = 0.0;
-      // for run in buffer.layout_runs() {
-      //   // for glyph in run.glyphs {
-      //   //   if glyph.metadata != 0 {
-      //   //     let i = glyph.metadata - 1;
-      //   //     msg.emotes[i].img.clone();
-      //   //   }
-      //   // }
-      //   out = (run.line_top + run.line_height).max(out);
-      // }
-      // out.ceil() as u32 + (2 * PADDING)
-      buffer.layout_runs().map(|run| run.line_top + run.line_height)
-        .fold(0.0f32, f32::max).ceil() as u32 + (2 * self.chat_margin as u32)
+      let mut out = 0.0_f32;
+      for run in buffer.layout_runs() {
+        out = out.max(run.line_top + run.line_height);
+        for glyph in run.glyphs {
+          let Some(emote_index) = glyph.metadata.checked_sub(1) else { continue; };
+          let Some(pos) = emote_pos.get_mut(emote_index) else {
+            log::error!("Emote metadata {} has no matching chat emote", glyph.metadata);
+            continue;
+          };
+          let x = self.chat_margin + glyph.x.round() as i32;
+          let y = self.chat_margin + (
+            run.line_top + (run.line_height - emote_size as f32) / 2.0
+          ).round() as i32;
+          *pos = Some((x,y));
+        }
+      }
+      out.ceil() as u32 + (2 * self.chat_margin as u32)
     };
     let mut msg_img = RgbaImage::from_pixel(inner_w, img_h, Rgba([0,0,0,0]));
     let text_color = Color::rgb(0xFF, 0xFF, 0xFF);
     buffer.draw(&mut self.swash_cache, text_color, draw_buffer(&mut msg_img, self.chat_margin));
-    let msg_img = add_text_outline(&msg_img, 2, Rgba([170,0,0,255]));
+    let mut msg_img = add_text_outline(&msg_img, 2, Rgba([170,0,0,255]));
+    // Draw the emotes in chat, static for now
+    for (emote,pos) in msg.emotes.iter().zip(emote_pos) {
+      let Some((x,y)) = pos else {
+        log::error!("No layout position was produced for emote {}", emote.name );
+        continue;
+      };
+      let emote_image = match image::load_from_memory(&emote.img) {
+        Ok(image) => image.to_rgba8(),
+        Err(error) => {
+          log::error!(
+            "Failed to decode inline emote {}: {}",
+            emote.name,
+            error,
+          );
+          continue;
+        }
+      };
+      let emote_image = resize(
+        &emote_image,
+        emote_size,
+        emote_size,
+        FilterType::Lanczos3,
+      );
+      overlay(
+        &mut msg_img,
+        &emote_image,
+        i64::from(x),
+        i64::from(y),
+      );
+    }
     let msg_tex = gen_rgba_tex(msg_img);
     let cblk = ChatMsgBlock {
       usr_tex, msg_tex, chat_data: msg, life: Some(self.chat_life),
