@@ -433,40 +433,78 @@ impl VideoTickSource for EmojiKanBan {
     data.check_twitch_connection();
     if let Some(rx) = data.emote_rx.as_mut() {
       while let Ok(emote_data) = rx.try_recv() { match emote_data {
-        EmoteComEnum::Data(emote_data) => {
-          if (data.emote_queue.len() as u32) < data.emote_queue_max_length {
-            let mut emote: EmoteOBS = emote_data.into();
-            if emote.tex_vec.is_empty() || emote.frame >= emote.tex_vec.len() {
-              log::error!("tex_vec empty or current frame out of bounds: len: {} frame: {}", emote.tex_vec.len(), emote.frame);
-              continue;
+        EmoteComEnum::Chat(ref chat_msg) => {
+          data.font_studio.add_chat_msg(chat_msg.clone());
+          for emote_data in chat_msg.emotes.iter() {
+            let emote_data = emote_data.clone();
+            if (data.emote_queue.len() as u32) < data.emote_queue_max_length {
+              let mut emote: EmoteOBS = emote_data.into();
+              if emote.tex_vec.is_empty() || emote.frame >= emote.tex_vec.len() {
+                log::error!("tex_vec empty or current frame out of bounds: len: {} frame: {}", emote.tex_vec.len(), emote.frame);
+                continue;
+              }
+              let (ew, eh) = (emote.tex_vec[emote.frame].width() as f32, emote.tex_vec[emote.frame].height() as f32);
+              let picker = data.rng.random_range(1..=100);
+              emote.effect = Some(match picker {
+                1..=10 => {
+                  SlideUpEffect::init(
+                    w,h,ew,eh,
+                    &mut data.rng,
+                  )
+                }
+                11..=30 => {
+                  InchWormEffect::init(
+                    w, h, ew, eh,
+                    &mut data.rng
+                  )
+                }
+                31..=100 => {
+                  GravityEffect::init(
+                    w,h,ew,eh,
+                    GRAVITY, BOUNCE,
+                    &mut data.rng,
+                  )
+                }
+                _ => { unreachable!() }
+              });
+              data.emote_queue.push_back(emote);
             }
-            let (ew, eh) = (emote.tex_vec[emote.frame].width() as f32, emote.tex_vec[emote.frame].height() as f32);
-            let picker = data.rng.random_range(1..=100);
-            emote.effect = Some(match picker {
-              1..=10 => {
-                SlideUpEffect::init(
-                  w,h,ew,eh,
-                  &mut data.rng,
-                )
-              }
-              11..=30 => {
-                InchWormEffect::init(
-                  w, h, ew, eh,
-                  &mut data.rng
-                )
-              }
-              31..=100 => {
-                GravityEffect::init(
-                  w,h,ew,eh,
-                  GRAVITY, BOUNCE,
-                  &mut data.rng,
-                )
-              }
-              _ => { unreachable!() }
-            });
-            data.emote_queue.push_back(emote);
           }
         }
+        // EmoteComEnum::Data(emote_data) => {
+        //     if (data.emote_queue.len() as u32) < data.emote_queue_max_length {
+        //       let mut emote: EmoteOBS = emote_data.into();
+        //       if emote.tex_vec.is_empty() || emote.frame >= emote.tex_vec.len() {
+        //         log::error!("tex_vec empty or current frame out of bounds: len: {} frame: {}", emote.tex_vec.len(), emote.frame);
+        //         continue;
+        //       }
+        //       let (ew, eh) = (emote.tex_vec[emote.frame].width() as f32, emote.tex_vec[emote.frame].height() as f32);
+        //       let picker = data.rng.random_range(1..=100);
+        //       emote.effect = Some(match picker {
+        //         1..=10 => {
+        //           SlideUpEffect::init(
+        //             w,h,ew,eh,
+        //             &mut data.rng,
+        //           )
+        //         }
+        //         11..=30 => {
+        //           InchWormEffect::init(
+        //             w, h, ew, eh,
+        //             &mut data.rng
+        //           )
+        //         }
+        //         31..=100 => {
+        //           GravityEffect::init(
+        //             w,h,ew,eh,
+        //             GRAVITY, BOUNCE,
+        //             &mut data.rng,
+        //           )
+        //         }
+        //         _ => { unreachable!() }
+        //       });
+        //       data.emote_queue.push_back(emote);
+        //     }
+        // }
         EmoteComEnum::TwitchConnectionFailure(e) => {
           log::error!("Twitch Connection Failure: {}", e.as_ref().as_ref().unwrap_err());
           data.twitch_status = InitConnection;
@@ -483,10 +521,7 @@ impl VideoTickSource for EmojiKanBan {
     }
     // Keep only the living
     data.emote_queue.retain(|emote| emote.is_alive() );
-    for tblk in data.font_studio.text_blocks.iter_mut() {
-      tblk.update(seconds);
-    }
-    data.font_studio.text_blocks.retain(|tblk| tblk.is_alive() );
+    data.font_studio.update(seconds);
   }
 }
 

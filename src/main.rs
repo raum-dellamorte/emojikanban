@@ -47,8 +47,10 @@ fn main() -> Result<(), anyhow::Error> {
   });
   while let Some(emote_data) = rx.blocking_recv() {
     match emote_data {
-      emojikanban::EmoteComEnum::Data(emote_data) => {
-        println!("Emote :{}: used.", emote_data.name);
+      emojikanban::EmoteComEnum::Chat(chat_msg) => {
+        for emote_data in chat_msg.emotes.iter() {
+          println!("Emote :{}: used.", emote_data.name);
+        }
       }
       emojikanban::EmoteComEnum::SqliteConnectionFailure(e) => {
         // let e = e.clone();

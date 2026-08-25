@@ -10,6 +10,7 @@ use {
     Result,
     anyhow,
   },
+  cosmic_text::Color,
   futures::StreamExt,
   irc::client::prelude::*,
   kdl::{
@@ -122,6 +123,10 @@ pub async fn start_twitch_monitor(mut ekb_conf_dirs: EkbConfigDirs, conf: EkbTwi
         // Do something with this?
       }
       Ok(pm) => {
+        let user: String = pm.display_name().unwrap_or("Anonymous").to_owned();
+        let chat_msg: String = pm.data.to_owned().into();
+        let ColorConverter::<Color>(uname_color) = pm.color().into();
+        let mut chat_data = ChatData { user, msg: chat_msg, uname_color, emotes: Vec::new() };
         for emote in pm.emotes() {
           let uri_v1 = format!("https://static-cdn.jtvnw.net/emoticons/v1/{}/3.0", emote.id);
           let uri_v2 = format!("https://static-cdn.jtvnw.net/emoticons/v2/{}/default/light/3.0", emote.id);
@@ -132,6 +137,7 @@ pub async fn start_twitch_monitor(mut ekb_conf_dirs: EkbConfigDirs, conf: EkbTwi
                 id: row.get(0)?,
                 name: row.get(1)?,
                 img: row.get(2)?,
+                loc: emote.byte_pos,
               })
             })
           {
@@ -157,6 +163,7 @@ pub async fn start_twitch_monitor(mut ekb_conf_dirs: EkbConfigDirs, conf: EkbTwi
               id: emote.id.to_string(),
               name: emote.name.into_owned(), // FixMe: this sometimes ends up with several names, probably when multiple emotes are used in the same chat
               img: img_bytes.into(),
+              loc: emote.byte_pos,
             };
             if let Err(e) = emotes.execute(
               "INSERT INTO emotes (id, name, img) VALUES (?1, ?2, ?3)",
@@ -167,8 +174,11 @@ pub async fn start_twitch_monitor(mut ekb_conf_dirs: EkbConfigDirs, conf: EkbTwi
             log::info!("Loaded emote id {} from URI", emote.id);
             emote_data
           };
-          let _ = tx.send(EmoteComEnum::Data(emote_data));
+          // let _ = tx.send(EmoteComEnum::Data(emote_data));
+          chat_data.emotes.push(emote_data);
         }
+        chat_data.emotes.sort_by_key(|e| e.loc.0 );
+        let _ = tx.send(EmoteComEnum::Chat(chat_data));
       }
     }
   }
@@ -385,12 +395,31 @@ pub struct EmoteData {
   pub id: String,
   pub name: String,
   pub img: Vec<u8>,
+  pub loc: (usize, usize),
+}
+
+#[derive(Clone)]
+pub struct ChatData {
+  pub user: String,
+  pub msg: String,
+  pub uname_color: Option<Color>,
+  pub emotes: Vec<EmoteData>
 }
 
 #[derive(Clone)]
 pub enum EmoteComEnum {
-  Data(EmoteData),
+  // Data(EmoteData),
+  Chat(ChatData),
   SqliteConnectionFailure(Arc<anyhow::Result<(),anyhow::Error>>),
   TwitchConnectionFailure(Arc<anyhow::Result<(),anyhow::Error>>),
 }
 
+pub struct ColorConverter<T>(Option<T>);
+
+impl From<Option<twitch_message::Color>> for ColorConverter<Color> {
+  fn from(value: Option<twitch_message::Color>) -> Self {
+    if let Some(c) = value {
+      ColorConverter(Some(Color::rgb(c.0, c.1, c.2)))
+    } else { ColorConverter(None) }
+  }
+}
