@@ -48,7 +48,7 @@ __Now cross-platform!__ (Minimal testing on Windows. Using `platform_dirs` crate
 
 Emotes are cached in a local sqlite database located in `[*nix: ~/.local/share | flatpak: ~/.var/app/com.obsproject.Studio/data | win: %LOCALAPPDATA% ]/emojikanban/emotes.db3` (untested on Windows) so that they are only downloaded once.
 
-Use at your own risk :) Rust does not prevent errors in logic. The crate I use to make this an OBS plugin is **Archived** since 2025 which may prove to be a problem in the near future.
+Use at your own risk :) Rust does not prevent errors in logic. The crate I use to make this an OBS plugin is **Archived** since 2025 which has been a mild problem. So I forked it and added a few things. Like buttons in the Properties window.
 
 Basic Instructions:
 ===================

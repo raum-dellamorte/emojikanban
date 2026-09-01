@@ -1,10 +1,8 @@
 use {
   crate::{
     config_kdl::*,
-    plugin::{
-      TwitchOAuthRcvr::*,
-      *,
-    },
+    plugin::*,
+    TwitchOAuthRcvr::*,
   },
   anyhow::{
     Result,
@@ -25,7 +23,14 @@ use {
     },
     obs_register_module,
     obs_string,
-    string::ObsString
+    obs_sys::{
+      obs_frontend_add_tools_menu_item,
+      obs_frontend_open_source_properties,
+      obs_source_create_private,
+    },
+    source::SourceRef,
+    string::ObsString,
+    wrapper::PtrWrapper,
   },
   platform_dirs::AppDirs,
   rusqlite::{
@@ -33,10 +38,24 @@ use {
     params,
   },
   std::{
+    ffi::c_void,
+    panic::{
+      AssertUnwindSafe, catch_unwind,
+    },
     path::PathBuf,
-    sync::Arc,
+    sync::{
+      Arc, /*Mutex,*/ OnceLock,
+    },
   },
-  tokio::sync::mpsc::UnboundedSender,
+  tokio::{
+    runtime::{
+      Handle, Runtime,
+    },
+    sync::{
+      broadcast, mpsc,
+    },
+    // task::JoinHandle,
+  },
   twitch_api::{
     helix::HelixClient, 
     twitch_oauth2::{
@@ -53,20 +72,88 @@ pub mod plugin;
 
 const PROMOTE_DEBUG_LOGS: bool = false;
 
+pub static EKB_BROADCAST: OnceLock<EkbBroadcast> = OnceLock::new();
+
+pub fn ekb_broadcast() -> &'static EkbBroadcast {
+  EKB_BROADCAST.get().unwrap()
+}
+
+#[derive(Debug)]
+pub struct EkbBroadcast {
+  pub runtime: Handle,
+  pub tx: broadcast::Sender<Arc<EmoteComEnum>>,
+}
+
 struct EKBModule {
   ctx: ModuleRef,
+  runtime: Option<Runtime>,
+  settings_source: Option<SourceRef>,
+  tools_menu_state: Option<Box<ToolsMenuState>>,
+}
+
+impl Drop for EKBModule {
+  fn drop(&mut self) {
+    if let Some(runtime) = self.runtime.take() {
+      runtime.shutdown_timeout(std::time::Duration::from_millis(100));
+    }
+  }
 }
 
 impl Module for EKBModule {
   fn new(ctx: ModuleRef) -> Self {
+    // Start the logger
     let _ = obs_wrapper::log::Logger::new().with_promote_debug(PROMOTE_DEBUG_LOGS).init();
-    Self { ctx }
+    // Launch a tokio runtime
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let (tx, _) = broadcast::channel::<Arc<EmoteComEnum>>(256);
+    EKB_BROADCAST.set(
+      EkbBroadcast {
+        runtime: runtime.handle().clone(),
+        tx,
+      }
+    ).unwrap();
+    let runtime = Some(runtime);
+    Self { ctx, runtime, settings_source: None, tools_menu_state: None, }
   }
   fn get_ctx(&self) -> &ModuleRef {
     &self.ctx
   }
   fn load(&mut self, load_context: &mut LoadContext) -> bool {
-    let source = load_context
+    let mut settings_info = load_context
+      .create_source_builder::<EkbSettings>()
+      .enable_get_name()
+      .enable_get_properties()
+      .enable_update()
+      .build();
+    settings_info.as_mut().output_flags |= obs_wrapper::obs_sys::OBS_SOURCE_CAP_DISABLED;
+    load_context.register_source(settings_info);
+    let raw_settings_source = unsafe {
+      obs_source_create_private(
+        obs_string!("emojikanban_settings").as_ptr(),
+        obs_string!("EmojiKanBan Configuration").as_ptr(),
+        std::ptr::null_mut(),
+      )
+    };
+    let Some(settings_source) = (unsafe {
+        SourceRef::from_raw_unchecked(raw_settings_source)
+    }) else {
+      log::error!("Failed to create private EmojiKanBan Settings source.");
+      return false;
+    };
+    let menu_state = Box::new(ToolsMenuState {
+      settings_source: settings_source.clone(), 
+    });
+    self.settings_source = Some(settings_source);
+    let private_data = menu_state.as_ref() as *const ToolsMenuState as *mut c_void;
+    unsafe {
+      obs_frontend_add_tools_menu_item(
+        obs_string!("EmojiKanBan Configuration").as_ptr(),
+        Some(open_ekb_config),
+        private_data
+      );
+    }
+    self.tools_menu_state = Some(menu_state);
+    let emojikanban_info = load_context
       .create_source_builder::<EmojiKanBan>()
       .enable_get_name()
       .enable_get_properties()
@@ -76,7 +163,18 @@ impl Module for EKBModule {
       .enable_video_render()
       .enable_video_tick()
       .build();
-    load_context.register_source(source);
+    load_context.register_source(emojikanban_info);
+    // let chatto_source = load_context
+    //   .create_source_builder::<ChattoKanBan>()
+    //   .enable_get_name()
+    //   .enable_get_properties()
+    //   .enable_get_width()
+    //   .enable_get_height()
+    //   .enable_update()
+    //   .enable_video_render()
+    //   .enable_video_tick()
+    //   .build();
+    // load_context.register_source(chatto_source);
     true
   }
   fn description() -> ObsString {
@@ -92,30 +190,53 @@ impl Module for EKBModule {
 
 obs_register_module!(EKBModule);
 
-pub async fn start_twitch_monitor(mut ekb_conf_dirs: EkbConfigDirs, conf: EkbTwitchConfig, tx: UnboundedSender<EmoteComEnum>) {
+struct ToolsMenuState {
+  settings_source: SourceRef,
+}
+
+unsafe extern "C" fn open_ekb_config(private_data: *mut c_void) {
+  if private_data.is_null() {
+    log::error!("EmojiKanBan Tools Menu callback received null data.");
+    return;
+  }
+  let result = catch_unwind(AssertUnwindSafe(|| {
+    let state = unsafe {
+      &*(private_data as *const ToolsMenuState)
+    };
+    unsafe {
+      obs_frontend_open_source_properties(state.settings_source.as_ptr_mut());
+    }
+  }));
+  if result.is_err() {
+    log::error!("EmojiKanBan Tools Menu callback panicked.");
+  }
+}
+
+pub async fn start_twitch_monitor(mut ekb_conf_dirs: EkbConfigDirs, conf: EkbTwitchConfig) {
+  let tx = ekb_broadcast().tx.clone();
   let emotes = match connect_sqlite(&mut ekb_conf_dirs) {
     Ok(emotes) => emotes,
     Err(e) => {
-      _ = tx.send(EmoteComEnum::SqliteConnectionFailure(Arc::new(Err(e.into()))));
+      _ = tx.send(Arc::new(EmoteComEnum::SqliteConnectionFailure(Err(e.into()))));
       return;
     }
   };
   let mut client = match connect_twitch_client(&conf).await {
     Ok(client) => { client }
     Err(e) => {
-      _ = tx.send(EmoteComEnum::TwitchConnectionFailure(Arc::new(Err(e.into()))));
+      _ = tx.send(Arc::new(EmoteComEnum::TwitchConnectionFailure(Err(e.into()))));
       return;
     }
   };
   let mut stream = match client.stream() {
     Ok(client) => { client }
     Err(e) => {
-      _ = tx.send(EmoteComEnum::TwitchConnectionFailure(Arc::new(Err(e.into()))));
+      _ = tx.send(Arc::new(EmoteComEnum::TwitchConnectionFailure(Err(e.into()))));
       return;
     }
   };
   while let Some(irc_response) = stream.next().await.transpose().unwrap_or_else(|e| {
-    _ = tx.send(EmoteComEnum::TwitchConnectionFailure(Arc::new(Err(e.into()))));
+    _ = tx.send(Arc::new(EmoteComEnum::TwitchConnectionFailure(Err(e.into()))));
     None
   }) {
     match irc_response.to_twitch_message_privmsg() {
@@ -178,7 +299,7 @@ pub async fn start_twitch_monitor(mut ekb_conf_dirs: EkbConfigDirs, conf: EkbTwi
           chat_data.emotes.push(emote_data);
         }
         chat_data.emotes.sort_by_key(|e| e.loc.0 );
-        let _ = tx.send(EmoteComEnum::Chat(chat_data));
+        let _ = tx.send(Arc::new(EmoteComEnum::Chat(chat_data)));
       }
     }
   }
@@ -252,7 +373,7 @@ async fn connect_twitch_client(conf: &EkbTwitchConfig) -> Result<irc::client::Cl
 }
 
 #[allow(clippy::needless_return)] // 'return' statements make the intention more obvious.
-pub async fn get_or_create_config_emojikanban(config_update: EkbConfigUpdate, tx: UnboundedSender<TwitchOAuthRcvr>) { // -> Result<(EkbConfigDirs, EkbTwitchConfig), String>
+pub async fn get_or_create_config_emojikanban(config_update: EkbConfigUpdate, tx: mpsc::UnboundedSender<TwitchOAuthRcvr>) { // -> Result<(EkbConfigDirs, EkbTwitchConfig), String>
   let app_name = Some("emojikanban");
   let config_file = "config.kdl";
   let config_kdl = 
@@ -406,12 +527,11 @@ pub struct ChatData {
   pub emotes: Vec<EmoteData>
 }
 
-#[derive(Clone)]
 pub enum EmoteComEnum {
   // Data(EmoteData),
   Chat(ChatData),
-  SqliteConnectionFailure(Arc<anyhow::Result<(),anyhow::Error>>),
-  TwitchConnectionFailure(Arc<anyhow::Result<(),anyhow::Error>>),
+  SqliteConnectionFailure(anyhow::Result<(),anyhow::Error>),
+  TwitchConnectionFailure(anyhow::Result<(),anyhow::Error>),
 }
 
 pub struct ColorConverter<T>(Option<T>);

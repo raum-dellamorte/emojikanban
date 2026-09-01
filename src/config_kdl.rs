@@ -12,7 +12,7 @@ use {
   },
 };
 
-#[derive(Clone,Default)]
+#[derive(Clone,Debug,Default)]
 pub struct EkbConfigUpdate {
   pub oauth: Option<String>,
   pub bot_account: Option<String>,

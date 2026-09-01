@@ -41,12 +41,18 @@ fn main() -> Result<(), anyhow::Error> {
     Some(emojikanban::plugin::TwitchOAuthRcvr::RcvrError(e)) => { panic!("Error getting config in main: {}", e) }
     None => { unreachable!() }
   };
-  let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<emojikanban::EmoteComEnum>();
+  let (tx, mut rx) = tokio::sync::broadcast::channel::<std::sync::Arc<emojikanban::EmoteComEnum>>(256);
+  emojikanban::EKB_BROADCAST.set(
+    emojikanban::EkbBroadcast {
+      runtime: runtime.handle().clone(),
+      tx,
+    }
+  ).unwrap();
   runtime.spawn(async move {
-    emojikanban::start_twitch_monitor(ekb_config_dirs, conf, tx).await;
+    emojikanban::start_twitch_monitor(ekb_config_dirs, conf).await;
   });
-  while let Some(emote_data) = rx.blocking_recv() {
-    match emote_data {
+  while let Ok(emote_data) = rx.blocking_recv() {
+    match emote_data.as_ref() {
       emojikanban::EmoteComEnum::Chat(chat_msg) => {
         for emote_data in chat_msg.emotes.iter() {
           println!("Emote :{}: used.", emote_data.name);

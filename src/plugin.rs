@@ -7,10 +7,12 @@ use {
       serve_oauth_receiver, validate_twitch_name,
     },
     effects::*,
+    ekb_broadcast,
     font_studio::*,
     plugin::{
       TwitchConnectionStatus::*, TwitchOAuthRcvr::*,
     },
+    start_twitch_monitor,
   },
   image::{
     AnimationDecoder, DynamicImage, ImageFormat,
@@ -40,29 +42,20 @@ use {
     },
   },
   tokio::{
-    runtime::Runtime,
-    sync::mpsc::{
-      UnboundedReceiver, UnboundedSender,
+    runtime::Handle,
+    sync::{
+      broadcast,
+      mpsc::{
+        UnboundedReceiver, UnboundedSender,
+      },
     },
     task::JoinHandle,
   }, 
 };
 
-pub enum TwitchOAuthRcvr {
-  OAuthToken(String),
-  NewConfigData((EkbConfigDirs, EkbTwitchConfig)),
-  RcvrError(anyhow::Error),
-}
-
-enum TwitchConnectionStatus {
-  InitConnection,
-  AwaitingConfig,
-  Connected,
-}
-
-pub struct EmojiKanBan {
+pub struct EkbSettings {
   source: WeakSourceRef,
-  runtime: Option<Runtime>,
+  runtime: Handle,
   need_oauth_update: Arc<Mutex<bool>>,
   need_config_file_update: Arc<Mutex<bool>>,
   config_data: Option<(EkbConfigDirs, EkbTwitchConfig)>,
@@ -72,18 +65,10 @@ pub struct EmojiKanBan {
   twitch_status: TwitchConnectionStatus,
   oauth_tx: Option<UnboundedSender<TwitchOAuthRcvr>>,
   oauth_rx: Option<UnboundedReceiver<TwitchOAuthRcvr>>,
-  emote_rx: Option<UnboundedReceiver<EmoteComEnum>>, // EmoteData -> anyhow::Result<EmoteData, String> to return error to try to reconnect to Twitch
-  emote_queue: VecDeque<EmoteOBS>,
-  emote_queue_max_length: u32,
-  font_studio: FontStudio,
-  rng: ThreadRng,
-  screen_w: u32,
-  screen_h: u32,
-  screen_offset_x: u32,
-  screen_offset_y: u32,
+  _emote_rx: broadcast::Receiver<Arc<EmoteComEnum>>, // EmoteData -> anyhow::Result<EmoteData, String> to return error to try to reconnect to Twitch
 }
 
-impl Drop for EmojiKanBan {
+impl Drop for EkbSettings {
   fn drop(&mut self) {
     if let Some(handle) = self.config_handle.take() {
       handle.abort();
@@ -93,62 +78,11 @@ impl Drop for EmojiKanBan {
     }
     self.oauth_rx.take();
     self.oauth_tx.take();
-    self.emote_rx.take();
-    if let Some(runtime) = self.runtime.take() {
-      runtime.shutdown_timeout(std::time::Duration::from_millis(100));
-    }
+    // self._emote_rx.take();
   }
 }
 
-impl Sourceable for EmojiKanBan {
-  fn get_id() -> ObsString {
-    obs_string!("emojikanban")
-  }
-  fn get_type() -> SourceType {
-    SourceType::Input
-  }
-  fn create(create: &mut CreatableSourceContext<Self>, mut source: SourceRef) -> Self {
-    log::info!("Creating EmojiKanBan Context");
-    let settings = &mut create.settings;
-    let emote_queue_max_length = settings.get(obs_string!("emotes_max")).unwrap_or(200);
-    let screen_w = settings.get(obs_string!("screen_width")).unwrap_or(1920);
-    let screen_h = settings.get(obs_string!("screen_height")).unwrap_or(1080);
-    let screen_offset_x = settings.get(obs_string!("offset_x")).unwrap_or(0);
-    let screen_offset_y = settings.get(obs_string!("offset_y")).unwrap_or(0);
-    
-    let mut font_studio = FontStudio::new();
-    font_studio.add_text_block(500, (50,50), (36.0,40.0), Some(15.0), "emojiKanBan Loaded");
-    
-    source.update_source_settings(settings);
-    
-    let mut ekb = Self {
-      source: source.downgrade(),
-      runtime: None,
-      need_oauth_update: Arc::new(Mutex::new(false)),
-      need_config_file_update: Arc::new(Mutex::new(false)),
-      config_data: None,
-      config_draft: EkbConfigUpdate::default(),
-      config_handle: None,
-      twitch_handle: None,
-      twitch_status: InitConnection,
-      oauth_tx: None,
-      oauth_rx: None,
-      emote_rx: None,
-      emote_queue: vec![].into(),
-      emote_queue_max_length,
-      font_studio,
-      rng: rand::rng(),
-      screen_w,
-      screen_h,
-      screen_offset_x,
-      screen_offset_y,
-    };
-    ekb.check_twitch_connection();
-    ekb
-  }
-}
-
-impl EmojiKanBan {
+impl EkbSettings {
   pub fn check_twitch_connection(&mut self) {
     if self.need_config_file_update() {
       self.disable_config_file_update();
@@ -162,9 +96,10 @@ impl EmojiKanBan {
       log::info!("Config File Update requested but there are no valid changes.");
     }
     let need_oauth_update = self.need_oauth_update();
+    use TwitchConnectionStatus::*;
     match self.twitch_status {
       InitConnection => {
-        if self.runtime.is_some() { // We have a runtime and now need to set up the Twitch connection
+        if self.oauth_tx.is_some() && self.oauth_rx.is_some() { // We have a runtime and now need to set up the Twitch connection
           if need_oauth_update {
             self.twitch_status = AwaitingConfig;
           } else {
@@ -173,60 +108,53 @@ impl EmojiKanBan {
             };
           } 
         } else { // We are not connected to Twitch and need to establish the runtime
-          let runtime = tokio::runtime::Runtime::new().unwrap();
           let (oauth_tx, oauth_rx) = tokio::sync::mpsc::unbounded_channel();
-          self.runtime = Some(runtime);
           self.oauth_tx = Some(oauth_tx);
           self.oauth_rx = Some(oauth_rx);
           self.check_twitch_connection(); // Try again with the runtime now available.
         }
       }
       AwaitingConfig => {
-        if self.runtime.is_some() {
-          if self.oauth_rx.is_some() {
-            while let Ok(res) = self.oauth_rx.as_mut().unwrap().try_recv() { match res {
-              OAuthToken(oauth) => {
-                let oauth = { if need_oauth_update {
-                  EkbConfigUpdate {
-                    oauth: Some(oauth.to_owned()),
-                    ..Default::default()
-                  } 
-                } else { EkbConfigUpdate::default() } };
-                self.disable_oauth_update();
-                if let Err(_) = self.start_config_thread(oauth) {
-                  log::error!("start_config_thread failed with new oauth data.")
-                };
-              }
-              NewConfigData(data) => {
-                if let Some(mut source) = self.source.upgrade() {
-                  let bot_account: ObsString = data.1.bot_account().into();
-                  let channel: ObsString = data.1.channel().into();
-                  {
-                    let mut settings = source.get_settings();
-                    settings.set_string(obs_string!("twitch_bot_account"), bot_account);
-                    settings.set_string("twitch_channel", channel);
-                  }
-                  source.update_source_properties();
-                }
-                self.config_data = Some(data);
-              }
-              RcvrError(e) => {
-                log::error!("{}", e);
-              }
-            }}
-          }
-          if let Some((ekb_config_dirs, conf)) = self.config_data.take() {
-            if let Some(handle) = self.twitch_handle.take() {
-              handle.abort();
+        if self.oauth_rx.is_some() {
+          while let Ok(res) = self.oauth_rx.as_mut().unwrap().try_recv() { match res {
+            OAuthToken(oauth) => {
+              let oauth = { if need_oauth_update {
+                EkbConfigUpdate {
+                  oauth: Some(oauth.to_owned()),
+                  ..Default::default()
+                } 
+              } else { EkbConfigUpdate::default() } };
+              self.disable_oauth_update();
+              if let Err(_) = self.start_config_thread(oauth) {
+                log::error!("start_config_thread failed with new oauth data.")
+              };
             }
-            self.emote_rx.take();
-            let (emote_tx, emote_rx) = tokio::sync::mpsc::unbounded_channel();
-            self.twitch_handle = Some(self.runtime.as_mut().unwrap().spawn(async move {
-              crate::start_twitch_monitor(ekb_config_dirs, conf, emote_tx).await;
-            }));
-            self.emote_rx = Some(emote_rx);
-            self.twitch_status = Connected;
+            NewConfigData(data) => {
+              if let Some(mut source) = self.source.upgrade() {
+                let bot_account: ObsString = data.1.bot_account().into();
+                let channel: ObsString = data.1.channel().into();
+                {
+                  let mut settings = source.get_settings();
+                  settings.set_string(obs_string!("twitch_bot_account"), bot_account);
+                  settings.set_string("twitch_channel", channel);
+                }
+                source.update_source_properties();
+              }
+              self.config_data = Some(data);
+            }
+            RcvrError(e) => {
+              log::error!("{}", e);
+            }
+          }}
+        }
+        if let Some((ekb_config_dirs, conf)) = self.config_data.take() {
+          if let Some(handle) = self.twitch_handle.take() {
+            handle.abort();
           }
+          self.twitch_handle = Some(self.runtime.spawn(async move {
+            start_twitch_monitor(ekb_config_dirs, conf).await;
+          }));
+          self.twitch_status = Connected;
         }
       }
       Connected => {
@@ -237,23 +165,18 @@ impl EmojiKanBan {
     }
   }
   fn start_config_thread(&mut self, ekb: EkbConfigUpdate) -> Result<(),EkbConfigUpdate> {
-    if let Some(runtime) = self.runtime.as_mut() {
-      if let Some(tx) = self.oauth_tx.as_ref() {
-        let tx = tx.clone();
-        if let Some(handle) = self.config_handle.take() {
-          handle.abort();
-        }
-        self.config_handle = Some(runtime.spawn(async move {
-          crate::get_or_create_config_emojikanban(ekb, tx).await;
-        }));
-        self.twitch_status = AwaitingConfig;
-        Ok(())
-      } else {
-        log::error!("Unexpected Error: start_config_thread expected self.oauth_tx to be Some(tx), which should have been created at the same time as self.runtime.");
-        return Err(ekb);
+    if let Some(tx) = self.oauth_tx.as_ref() {
+      let tx = tx.clone();
+      if let Some(handle) = self.config_handle.take() {
+        handle.abort();
       }
+      self.config_handle = Some(self.runtime.spawn(async move {
+        crate::get_or_create_config_emojikanban(ekb, tx).await;
+      }));
+      self.twitch_status = AwaitingConfig;
+      Ok(())
     } else {
-      log::error!("start_config_thread run with no runtime available.");
+      log::error!("Unexpected Error: start_config_thread expected self.oauth_tx to be Some(tx), which should have been created at the same time as self.runtime.");
       return Err(ekb);
     }
   }
@@ -290,32 +213,47 @@ impl EmojiKanBan {
       *update = false;
     }
   }
-} // impl EmojiKanBan
+} // impl EkbSettings
 
-const GRAVITY: f32 = 1800.;
-const BOUNCE: f32 = 0.6;
 
-impl GetNameSource for EmojiKanBan {
+impl Sourceable for EkbSettings {
+  fn get_id() -> ObsString {
+    obs_string!("emojikanban_settings")
+  }
+  fn get_type() -> SourceType {
+    SourceType::Input
+  }
+  fn create(create: &mut CreatableSourceContext<Self>, mut source: SourceRef) -> Self {
+    let settings = &mut create.settings;
+    
+    source.update_source_settings(settings);
+    Self {
+      source: source.downgrade(),
+      runtime: ekb_broadcast().runtime.clone(),
+      need_oauth_update: Arc::new(Mutex::new(false)),
+      need_config_file_update: Arc::new(Mutex::new(false)),
+      config_data: None,
+      config_draft: EkbConfigUpdate::default(),
+      config_handle: None,
+      twitch_handle: None,
+      twitch_status: InitConnection,
+      oauth_tx: None,
+      oauth_rx: None,
+      _emote_rx: ekb_broadcast().tx.subscribe(),
+    }
+  }
+}
+
+impl GetNameSource for EkbSettings {
   fn get_name() -> ObsString {
-    obs_string!("emojikanban")
+    obs_string!("EmojiKanBan Settings")
   }
 }
 
-impl GetWidthSource for EmojiKanBan {
-  fn get_width(&mut self) -> u32 {
-    self.screen_w
-  }
-}
-
-impl GetHeightSource for EmojiKanBan {
-  fn get_height(&mut self) -> u32 {
-    self.screen_h
-  }
-}
-
-impl GetPropertiesSource for EmojiKanBan {
+impl GetPropertiesSource for EkbSettings {
   fn get_properties(&mut self) -> Properties {
     let mut props = Properties::new();
+    // let broadcast = ekb_broadcast();
     if let Some(ref tx) = self.oauth_tx {
       let oauth_tx = tx.clone();
       let update_oauth = self.need_oauth_update.clone();
@@ -366,7 +304,101 @@ impl GetPropertiesSource for EmojiKanBan {
         obs_string!("twitch_channel"),
         obs_string!("Twitch channel"),
         TextProp::new(TextType::Default),
-      )
+      );
+    props
+  }
+}
+
+impl UpdateSource for EkbSettings {
+  fn update(&mut self, settings: &mut DataObj, _context: &mut GlobalContext) {
+    let data = self;
+    if let Some(bot_account) = settings.get(obs_string!("twitch_bot_account")) {
+      data.update_bot_account(bot_account);
+    }
+    if let Some(channel) = settings.get(obs_string!("twitch_channel")) {
+      data.update_channel(channel);
+    }
+  }
+}
+
+pub struct EmojiKanBan {
+  source: WeakSourceRef,
+  _runtime: Handle,
+  chat_rx: broadcast::Receiver<Arc<EmoteComEnum>>,
+  emote_queue: VecDeque<EmoteOBS>,
+  emote_queue_max_length: u32,
+  font_studio: FontStudio,
+  rng: ThreadRng,
+  screen_w: u32,
+  screen_h: u32,
+  screen_offset_x: u32,
+  screen_offset_y: u32,
+}
+
+impl Sourceable for EmojiKanBan {
+  fn get_id() -> ObsString {
+    obs_string!("emojikanban")
+  }
+  fn get_type() -> SourceType {
+    SourceType::Input
+  }
+  fn create(create: &mut CreatableSourceContext<Self>, mut source: SourceRef) -> Self {
+    log::info!("Creating EmojiKanBan Context");
+    let (_runtime, chat_rx) = {
+      let broadcast = crate::ekb_broadcast();
+      (broadcast.runtime.clone(), broadcast.tx.subscribe())
+    };
+    let settings = &mut create.settings;
+    let emote_queue_max_length = settings.get(obs_string!("emotes_max")).unwrap_or(200);
+    let screen_w = settings.get(obs_string!("screen_width")).unwrap_or(1920);
+    let screen_h = settings.get(obs_string!("screen_height")).unwrap_or(1080);
+    let screen_offset_x = settings.get(obs_string!("offset_x")).unwrap_or(0);
+    let screen_offset_y = settings.get(obs_string!("offset_y")).unwrap_or(0);
+    
+    let mut font_studio = FontStudio::new();
+    font_studio.add_text_block(500, (50,50), (36.0,40.0), Some(15.0), "emojiKanBan Loaded");
+    source.update_source_settings(settings);
+    Self {
+      source: source.downgrade(),
+      _runtime,
+      chat_rx,
+      emote_queue: vec![].into(),
+      emote_queue_max_length,
+      font_studio,
+      rng: rand::rng(),
+      screen_w,
+      screen_h,
+      screen_offset_x,
+      screen_offset_y,
+    }
+  }
+}
+
+const GRAVITY: f32 = 1800.;
+const BOUNCE: f32 = 0.6;
+
+impl GetNameSource for EmojiKanBan {
+  fn get_name() -> ObsString {
+    obs_string!("emojikanban")
+  }
+}
+
+impl GetWidthSource for EmojiKanBan {
+  fn get_width(&mut self) -> u32 {
+    self.screen_w
+  }
+}
+
+impl GetHeightSource for EmojiKanBan {
+  fn get_height(&mut self) -> u32 {
+    self.screen_h
+  }
+}
+
+impl GetPropertiesSource for EmojiKanBan {
+  fn get_properties(&mut self) -> Properties {
+    let mut props = Properties::new();
+    props
       .add(
         obs_string!("emotes_max"), 
         obs_string!("Cap the number of emotes to draw."), 
@@ -401,12 +433,6 @@ impl GetPropertiesSource for EmojiKanBan {
 impl UpdateSource for EmojiKanBan {
   fn update(&mut self, settings: &mut DataObj, _context: &mut GlobalContext) {
     let data = self;
-    if let Some(bot_account) = settings.get(obs_string!("twitch_bot_account")) {
-      data.update_bot_account(bot_account);
-    }
-    if let Some(channel) = settings.get(obs_string!("twitch_channel")) {
-      data.update_channel(channel);
-    }
     if let Some(emotes_max) = settings.get(obs_string!("emotes_max")) {
       data.emote_queue_max_length = emotes_max;
     }
@@ -430,57 +456,55 @@ impl VideoTickSource for EmojiKanBan {
     let data: &mut EmojiKanBan = self;
     let w = data.screen_w as f32;
     let h = data.screen_h as f32;
-    data.check_twitch_connection();
-    if let Some(rx) = data.emote_rx.as_mut() {
-      while let Ok(emote_data) = rx.try_recv() { match emote_data {
-        EmoteComEnum::Chat(ref chat_msg) => {
-          data.font_studio.add_chat_msg(chat_msg.clone());
-          for emote_data in chat_msg.emotes.iter() {
-            let emote_data = emote_data.clone();
-            if (data.emote_queue.len() as u32) < data.emote_queue_max_length {
-              let mut emote: EmoteOBS = emote_data.into();
-              if emote.tex_vec.is_empty() || emote.frame >= emote.tex_vec.len() {
-                log::error!("tex_vec empty or current frame out of bounds: len: {} frame: {}", emote.tex_vec.len(), emote.frame);
-                continue;
-              }
-              let (ew, eh) = (emote.tex_vec[emote.frame].width() as f32, emote.tex_vec[emote.frame].height() as f32);
-              let picker = data.rng.random_range(1..=100);
-              emote.effect = Some(match picker {
-                1..=10 => {
-                  SlideUpEffect::init(
-                    w,h,ew,eh,
-                    &mut data.rng,
-                  )
-                }
-                11..=30 => {
-                  InchWormEffect::init(
-                    w, h, ew, eh,
-                    &mut data.rng
-                  )
-                }
-                31..=100 => {
-                  GravityEffect::init(
-                    w,h,ew,eh,
-                    GRAVITY, BOUNCE,
-                    &mut data.rng,
-                  )
-                }
-                _ => { unreachable!() }
-              });
-              data.emote_queue.push_back(emote);
+    // data.check_twitch_connection();
+    while let Ok(ref emote_data) = data.chat_rx.try_recv() { match emote_data.as_ref() {
+      EmoteComEnum::Chat(chat_msg) => {
+        data.font_studio.add_chat_msg(chat_msg.clone());
+        for emote_data in chat_msg.emotes.iter() {
+          let emote_data = emote_data.clone();
+          if (data.emote_queue.len() as u32) < data.emote_queue_max_length {
+            let mut emote: EmoteOBS = emote_data.into();
+            if emote.tex_vec.is_empty() || emote.frame >= emote.tex_vec.len() {
+              log::error!("tex_vec empty or current frame out of bounds: len: {} frame: {}", emote.tex_vec.len(), emote.frame);
+              continue;
             }
+            let (ew, eh) = (emote.tex_vec[emote.frame].width() as f32, emote.tex_vec[emote.frame].height() as f32);
+            let picker = data.rng.random_range(1..=100);
+            emote.effect = Some(match picker {
+              1..=10 => {
+                SlideUpEffect::init(
+                  w,h,ew,eh,
+                  &mut data.rng,
+                )
+              }
+              11..=30 => {
+                InchWormEffect::init(
+                  w, h, ew, eh,
+                  &mut data.rng
+                )
+              }
+              31..=100 => {
+                GravityEffect::init(
+                  w,h,ew,eh,
+                  GRAVITY, BOUNCE,
+                  &mut data.rng,
+                )
+              }
+              _ => { unreachable!() }
+            });
+            data.emote_queue.push_back(emote);
           }
         }
-        EmoteComEnum::TwitchConnectionFailure(e) => {
-          log::error!("Twitch Connection Failure: {}", e.as_ref().as_ref().unwrap_err());
-          data.twitch_status = InitConnection;
-          data.twitch_handle.take();
-        }
-        EmoteComEnum::SqliteConnectionFailure(e) => {
-          log::error!("Sqlite Connection Failure: {}", e.as_ref().as_ref().unwrap_err());
-        }
-      }}
-    }
+      }
+      EmoteComEnum::TwitchConnectionFailure(e) => {
+        log::error!("Twitch Connection Failure: {}", e.as_ref().as_ref().unwrap_err());
+        // data.twitch_status = InitConnection;
+        // data.twitch_handle.take();
+      }
+      EmoteComEnum::SqliteConnectionFailure(e) => {
+        log::error!("Sqlite Connection Failure: {}", e.as_ref().as_ref().unwrap_err());
+      }
+    }}
     // Animate emotes in queue
     for emote in data.emote_queue.iter_mut() {
       emote.update(seconds);
@@ -611,4 +635,18 @@ impl From<EmoteData> for EmoteOBS { // This approach is fun but doesn't allow fo
       effect: None,
     }
   }
+}
+
+#[derive(Debug)]
+pub enum TwitchOAuthRcvr {
+  OAuthToken(String),
+  NewConfigData((EkbConfigDirs, EkbTwitchConfig)),
+  RcvrError(anyhow::Error),
+}
+
+#[derive(Debug)]
+enum TwitchConnectionStatus {
+  InitConnection,
+  AwaitingConfig,
+  Connected,
 }
