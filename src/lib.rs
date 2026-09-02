@@ -177,6 +177,7 @@ impl Module for EKBModule {
     let chatto_source = load_context
       .create_source_builder::<ChattoKanBan>()
       .enable_get_name()
+      .enable_get_defaults()
       .enable_get_properties()
       .enable_get_width()
       .enable_get_height()

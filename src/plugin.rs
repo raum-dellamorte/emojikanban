@@ -409,6 +409,9 @@ impl VideoRenderSource for EmojiKanBan {
   }
 }
 
+const DEFAULT_CHAT_W: u32 = 320;
+const DEFAULT_CHAT_H: u32 = 700;
+
 pub struct ChattoKanBan {
   source: WeakSourceRef,
   chat_rx: broadcast::Receiver<Arc<ChatData>>,
@@ -431,8 +434,8 @@ impl Sourceable for ChattoKanBan {
     log::info!("Creating ChattoKanBan Context");
     let chat_rx = ekb_broadcast().chat_tx.subscribe();
     let settings = &mut create.settings;
-    let chat_w = settings.get(obs_string!("chat_width")).unwrap_or(320);
-    let chat_h = settings.get(obs_string!("chat_height")).unwrap_or(700);
+    let chat_w = settings.get(obs_string!("chat_width")).unwrap_or(DEFAULT_CHAT_W);
+    let chat_h = settings.get(obs_string!("chat_height")).unwrap_or(DEFAULT_CHAT_H);
     // let screen_offset_x = settings.get(obs_string!("offset_x")).unwrap_or(0);
     // let screen_offset_y = settings.get(obs_string!("offset_y")).unwrap_or(0);
     let font_studio = FontStudio::new();
@@ -465,6 +468,19 @@ impl GetWidthSource for ChattoKanBan {
 impl GetHeightSource for ChattoKanBan {
   fn get_height(&mut self) -> u32 {
     self.chat_h
+  }
+}
+
+impl GetDefaultsSource for ChattoKanBan {
+  fn get_defaults(settings: &mut DataObj) {
+    settings.set_default::<u32>(
+      obs_string!("chat_width"),
+      DEFAULT_CHAT_W
+    );
+    settings.set_default::<u32>(
+      obs_string!("chat_height"),
+      DEFAULT_CHAT_H
+    );
   }
 }
 
@@ -505,8 +521,8 @@ impl GetPropertiesSource for ChattoKanBan {
 impl UpdateSource for ChattoKanBan {
   fn update(&mut self, settings: &mut DataObj, _context: &mut GlobalContext) {
     let data = self;
-    let chat_w = settings.get(obs_string!("chat_width")).unwrap_or(300); 
-    let chat_h = settings.get(obs_string!("chat_height")).unwrap_or(700);
+    let chat_w = settings.get(obs_string!("chat_width")).unwrap_or(DEFAULT_CHAT_W); 
+    let chat_h = settings.get(obs_string!("chat_height")).unwrap_or(DEFAULT_CHAT_H);
     if data.chat_w != chat_w || data.chat_h != chat_h {
       data.chat_w = chat_w;
       data.chat_h = chat_h;
