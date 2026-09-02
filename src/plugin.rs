@@ -7,12 +7,12 @@ use {
       serve_oauth_receiver, validate_twitch_name,
     },
     effects::*,
-    ekb_broadcast,
+    // ekb_broadcast,
     font_studio::*,
-    plugin::{
-      TwitchConnectionStatus::*, TwitchOAuthRcvr::*,
-    },
-    start_twitch_monitor,
+    // plugin::{
+    //   TwitchConnectionStatus::*, // TwitchOAuthRcvr::*,
+    // },
+    // start_twitch_monitor,
   },
   image::{
     AnimationDecoder, DynamicImage, ImageFormat,
@@ -54,15 +54,16 @@ use {
 };
 
 pub struct EkbSettings {
+  #[allow(dead_code)]
   source: WeakSourceRef,
-  runtime: Handle,
+  // runtime: Handle,
   need_oauth_update: Arc<Mutex<bool>>,
   need_config_file_update: Arc<Mutex<bool>>,
-  config_data: Option<(EkbConfigDirs, EkbTwitchConfig)>,
+  // config_data: Option<(EkbConfigDirs, EkbTwitchConfig)>,
   config_draft: EkbConfigUpdate,
   config_handle: Option<JoinHandle<()>>,
   twitch_handle: Option<JoinHandle<()>>,
-  twitch_status: TwitchConnectionStatus,
+  // twitch_status: TwitchConnectionStatus,
   oauth_tx: Option<UnboundedSender<TwitchOAuthRcvr>>,
   oauth_rx: Option<UnboundedReceiver<TwitchOAuthRcvr>>,
 }
@@ -87,98 +88,98 @@ impl EkbSettings {
       self.disable_config_file_update();
       let update = std::mem::take(&mut self.config_draft);
       if update.bot_account.is_some() || update.channel.is_some() {
-        if let Err(update) = self.start_config_thread(update) {
-          self.config_draft = update;
-        };
+        // if let Err(update) = self.start_config_thread(update) {
+        //   self.config_draft = update;
+        // };
         return;
       }
       log::info!("Config File Update requested but there are no valid changes.");
     }
-    let need_oauth_update = self.need_oauth_update();
-    use TwitchConnectionStatus::*;
-    match self.twitch_status {
-      InitConnection => {
-        if self.oauth_tx.is_some() && self.oauth_rx.is_some() { // We have a runtime and now need to set up the Twitch connection
-          if need_oauth_update {
-            self.twitch_status = AwaitingConfig;
-          } else {
-            if let Err(_) = self.start_config_thread(EkbConfigUpdate::default()) {
-              log::error!("start_config_thread failed with default values.");
-            };
-          } 
-        } else { // We are not connected to Twitch and need to establish the runtime
-          let (oauth_tx, oauth_rx) = tokio::sync::mpsc::unbounded_channel();
-          self.oauth_tx = Some(oauth_tx);
-          self.oauth_rx = Some(oauth_rx);
-          self.check_twitch_connection(); // Try again with the runtime now available.
-        }
-      }
-      AwaitingConfig => {
-        if self.oauth_rx.is_some() {
-          while let Ok(res) = self.oauth_rx.as_mut().unwrap().try_recv() { match res {
-            OAuthToken(oauth) => {
-              let oauth = { if need_oauth_update {
-                EkbConfigUpdate {
-                  oauth: Some(oauth.to_owned()),
-                  ..Default::default()
-                } 
-              } else { EkbConfigUpdate::default() } };
-              self.disable_oauth_update();
-              if let Err(_) = self.start_config_thread(oauth) {
-                log::error!("start_config_thread failed with new oauth data.")
-              };
-            }
-            NewConfigData(data) => {
-              if let Some(mut source) = self.source.upgrade() {
-                let bot_account: ObsString = data.1.bot_account().into();
-                let channel: ObsString = data.1.channel().into();
-                {
-                  let mut settings = source.get_settings();
-                  settings.set_string(obs_string!("twitch_bot_account"), bot_account);
-                  settings.set_string("twitch_channel", channel);
-                }
-                source.update_source_properties();
-              }
-              self.config_data = Some(data);
-            }
-            RcvrError(e) => {
-              log::error!("{}", e);
-            }
-          }}
-        }
-        if let Some((ekb_config_dirs, conf)) = self.config_data.take() {
-          if let Some(handle) = self.twitch_handle.take() {
-            handle.abort();
-          }
-          self.twitch_handle = Some(self.runtime.spawn(async move {
-            let _ = start_twitch_monitor(ekb_config_dirs, conf).await;
-          }));
-          self.twitch_status = Connected;
-        }
-      }
-      Connected => {
-        if need_oauth_update {
-          self.twitch_status = AwaitingConfig;
-        }
-      }
-    }
+    // let need_oauth_update = self.need_oauth_update();
+    // use TwitchConnectionStatus::*;
+    // match self.twitch_status {
+    //   InitConnection => {
+    //     if self.oauth_tx.is_some() && self.oauth_rx.is_some() { // We have a runtime and now need to set up the Twitch connection
+    //       if need_oauth_update {
+    //         self.twitch_status = AwaitingConfig;
+    //       } else {
+    //         if let Err(_) = self.start_config_thread(EkbConfigUpdate::default()) {
+    //           log::error!("start_config_thread failed with default values.");
+    //         };
+    //       } 
+    //     } else { // We are not connected to Twitch and need to establish the runtime
+    //       let (oauth_tx, oauth_rx) = tokio::sync::mpsc::unbounded_channel();
+    //       self.oauth_tx = Some(oauth_tx);
+    //       self.oauth_rx = Some(oauth_rx);
+    //       self.check_twitch_connection(); // Try again with the runtime now available.
+    //     }
+    //   }
+    //   AwaitingConfig => {
+    //     if self.oauth_rx.is_some() {
+    //       while let Ok(res) = self.oauth_rx.as_mut().unwrap().try_recv() { match res {
+    //         OAuthToken(oauth) => {
+    //           let oauth = { if need_oauth_update {
+    //             EkbConfigUpdate {
+    //               oauth: Some(oauth.to_owned()),
+    //               ..Default::default()
+    //             } 
+    //           } else { EkbConfigUpdate::default() } };
+    //           self.disable_oauth_update();
+    //           if let Err(_) = self.start_config_thread(oauth) {
+    //             log::error!("start_config_thread failed with new oauth data.")
+    //           };
+    //         }
+    //         NewConfigData(data) => {
+    //           if let Some(mut source) = self.source.upgrade() {
+    //             let bot_account: ObsString = data.1.bot_account().into();
+    //             let channel: ObsString = data.1.channel().into();
+    //             {
+    //               let mut settings = source.get_settings();
+    //               settings.set_string(obs_string!("twitch_bot_account"), bot_account);
+    //               settings.set_string("twitch_channel", channel);
+    //             }
+    //             source.update_source_properties();
+    //           }
+    //           self.config_data = Some(data);
+    //         }
+    //         RcvrError(e) => {
+    //           log::error!("{}", e);
+    //         }
+    //       }}
+    //     }
+    //     if let Some((ekb_config_dirs, conf)) = self.config_data.take() {
+    //       if let Some(handle) = self.twitch_handle.take() {
+    //         handle.abort();
+    //       }
+    //       self.twitch_handle = Some(self.runtime.spawn(async move {
+    //         let _ = start_twitch_monitor(ekb_config_dirs, conf).await;
+    //       }));
+    //       self.twitch_status = Connected;
+    //     }
+    //   }
+    //   Connected => {
+    //     if need_oauth_update {
+    //       self.twitch_status = AwaitingConfig;
+    //     }
+    //   }
+    // }
   }
-  fn start_config_thread(&mut self, ekb: EkbConfigUpdate) -> Result<(),EkbConfigUpdate> {
-    if let Some(tx) = self.oauth_tx.as_ref() {
-      let tx = tx.clone();
-      if let Some(handle) = self.config_handle.take() {
-        handle.abort();
-      }
-      self.config_handle = Some(self.runtime.spawn(async move {
-        crate::get_or_create_config_emojikanban(ekb, tx).await;
-      }));
-      self.twitch_status = AwaitingConfig;
-      Ok(())
-    } else {
-      log::error!("Unexpected Error: start_config_thread expected self.oauth_tx to be Some(tx), which should have been created at the same time as self.runtime.");
-      return Err(ekb);
-    }
-  }
+  // fn start_config_thread(&mut self, ekb: EkbConfigUpdate) -> Result<(),EkbConfigUpdate> {
+  //   if let Some(tx) = self.oauth_tx.as_ref() {
+  //     let tx = tx.clone();
+  //     if let Some(handle) = self.config_handle.take() {
+  //       handle.abort();
+  //     }
+  //     self.config_handle = Some(self.runtime.spawn(async move {
+  //       crate::get_or_create_config_emojikanban(ekb, tx).await;
+  //     }));
+  //     // self.twitch_status = AwaitingConfig;
+  //     Ok(())
+  //   } else {
+  //     log::error!("Unexpected Error: start_config_thread expected self.oauth_tx to be Some(tx), which should have been created at the same time as self.runtime.");
+  //     return Err(ekb);
+  //   }
+  // }
   // pub fn update_config_from_draft() {}
   pub fn update_bot_account(&mut self, value: Cow<'_,str>) {
     let value = validate_twitch_name(value);
@@ -228,14 +229,14 @@ impl Sourceable for EkbSettings {
     source.update_source_settings(settings);
     let mut ekb_settings = Self {
       source: source.downgrade(),
-      runtime: ekb_broadcast().runtime.clone(),
+      // runtime: ekb_broadcast().runtime.clone(),
       need_oauth_update: Arc::new(Mutex::new(false)),
       need_config_file_update: Arc::new(Mutex::new(false)),
-      config_data: None,
+      // config_data: None,
       config_draft: EkbConfigUpdate::default(),
       config_handle: None,
       twitch_handle: None,
-      twitch_status: InitConnection,
+      // twitch_status: InitConnection,
       oauth_tx: None,
       oauth_rx: None,
     };
@@ -346,7 +347,7 @@ impl Sourceable for EmojiKanBan {
     log::info!("Creating EmojiKanBan Context");
     let (_runtime, chat_rx) = {
       let broadcast = crate::ekb_broadcast();
-      (broadcast.runtime.clone(), broadcast.tx.subscribe())
+      (broadcast.runtime.clone(), broadcast.chat_tx.subscribe())
     };
     let settings = &mut create.settings;
     let emote_queue_max_length = settings.get(obs_string!("emotes_max")).unwrap_or(200);
@@ -644,9 +645,9 @@ pub enum TwitchOAuthRcvr {
   RcvrError(anyhow::Error),
 }
 
-#[derive(Debug)]
-enum TwitchConnectionStatus {
-  InitConnection,
-  AwaitingConfig,
-  Connected,
-}
+// #[derive(Debug)]
+// enum TwitchConnectionStatus {
+//   InitConnection,
+//   AwaitingConfig,
+//   Connected,
+// }

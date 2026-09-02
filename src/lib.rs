@@ -2,7 +2,7 @@ use {
   crate::{
     config_kdl::*,
     plugin::*,
-    TwitchOAuthRcvr::*,
+    // TwitchOAuthRcvr::*,
   },
   anyhow::{
     Result,
@@ -54,7 +54,7 @@ use {
     sync::{
       broadcast, mpsc,
     },
-    // task::JoinHandle,
+    task::JoinHandle,
   },
   twitch_api::{
     helix::HelixClient, 
@@ -81,12 +81,14 @@ pub fn ekb_broadcast() -> &'static EkbBroadcast {
 #[derive(Debug)]
 pub struct EkbBroadcast {
   pub runtime: Handle,
-  pub tx: broadcast::Sender<Arc<ChatData>>,
+  pub chat_tx: broadcast::Sender<Arc<ChatData>>,
+  pub cmd_tx: mpsc::UnboundedSender<TwitchMgrCmd>,
 }
 
 struct EKBModule {
   ctx: ModuleRef,
   runtime: Option<Runtime>,
+  twitch_mgr_handle: Option<JoinHandle<()>>,
   settings_source: Option<SourceRef>,
   tools_menu_state: Option<Box<ToolsMenuState>>,
 }
@@ -105,15 +107,18 @@ impl Module for EKBModule {
     let _ = obs_wrapper::log::Logger::new().with_promote_debug(PROMOTE_DEBUG_LOGS).init();
     // Launch a tokio runtime
     let runtime = tokio::runtime::Runtime::new().unwrap();
-    let (tx, _) = broadcast::channel::<Arc<ChatData>>(256);
+    let (chat_tx, _) = broadcast::channel::<Arc<ChatData>>(256);
+    let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
+    let twitch_mgr_handle = Some(runtime.spawn(twitch_connection_mgr(cmd_rx, chat_tx.clone())));
     EKB_BROADCAST.set(
       EkbBroadcast {
         runtime: runtime.handle().clone(),
-        tx,
+        chat_tx,
+        cmd_tx,
       }
     ).unwrap();
     let runtime = Some(runtime);
-    Self { ctx, runtime, settings_source: None, tools_menu_state: None, }
+    Self { ctx, runtime, twitch_mgr_handle, settings_source: None, tools_menu_state: None, }
   }
   fn get_ctx(&self) -> &ModuleRef {
     &self.ctx
@@ -178,6 +183,9 @@ impl Module for EKBModule {
     true
   }
   fn unload(&mut self) {
+    if let Some(handle) = self.twitch_mgr_handle.take() {
+      handle.abort();
+    }
     self.settings_source.take();
     self.tools_menu_state.take();
     if let Some(runtime) = self.runtime.take() {
@@ -219,12 +227,74 @@ unsafe extern "C" fn open_ekb_config(private_data: *mut c_void) {
   }
 }
 
-pub async fn twitch_connection_mgr() {
-  todo!()
+pub async fn twitch_connection_mgr(
+  mut cmd_rx: mpsc::UnboundedReceiver<TwitchMgrCmd>,
+  chat_tx: broadcast::Sender<Arc<ChatData>>,
+) {
+  let mut config_update = EkbConfigUpdate::default();
+  loop {
+    let (config_dirs, config) = match get_or_create_config_emojikanban(config_update).await {
+      Ok(config) => config,
+      Err(error) => {
+        log::error!(
+          "Failed to load EmojiKanBan configuration: {}",
+          error,
+        );
+        match cmd_rx.recv().await {
+          Some(TwitchMgrCmd::UpdateConfig(update)) => {
+            config_update = update;
+            continue;
+          }
+          Some(TwitchMgrCmd::Reconnect) => {
+            config_update = EkbConfigUpdate::default();
+            continue;
+          }
+          Some(TwitchMgrCmd::Shutdown) | None => { return; },
+        }
+      }
+    };
+    let mut monitor = tokio::spawn(
+      start_twitch_monitor(config_dirs, config, chat_tx.clone(), )
+    );
+    tokio::select! {
+      result = &mut monitor => {
+        match result {
+          Ok(Ok(())) => {
+            log::warn!("Twitch monitor stopped");
+          }
+          Ok(Err(error)) => {
+            log::error!("Twitch monitor failed: {}", error);
+          }
+          Err(error) => {
+            log::error!(
+              "Twitch monitor task failed: {}",
+              error,
+            );
+          }
+        }
+        // Add a reconnect delay here.
+        tokio::time::sleep(
+          std::time::Duration::from_secs(5),
+        ).await;
+        config_update = EkbConfigUpdate::default();
+      }
+      command = cmd_rx.recv() => {
+        monitor.abort();
+        match command {
+          Some(TwitchMgrCmd::UpdateConfig(update)) => {
+            config_update = update;
+          }
+          Some(TwitchMgrCmd::Reconnect) => {
+            config_update = EkbConfigUpdate::default();
+          }
+          Some(TwitchMgrCmd::Shutdown) | None => return,
+        }
+      }
+    }
+  }
 }
 
-pub async fn start_twitch_monitor(mut ekb_conf_dirs: EkbConfigDirs, conf: EkbTwitchConfig) -> anyhow::Result<()> {
-  let tx = ekb_broadcast().tx.clone();
+pub async fn start_twitch_monitor(mut ekb_conf_dirs: EkbConfigDirs, conf: EkbTwitchConfig, chat_tx: broadcast::Sender<Arc<ChatData>>) -> anyhow::Result<()> {
   let emotes = match connect_sqlite(&mut ekb_conf_dirs) {
     Ok(emotes) => emotes,
     Err(e) => {
@@ -253,7 +323,7 @@ pub async fn start_twitch_monitor(mut ekb_conf_dirs: EkbConfigDirs, conf: EkbTwi
     }
     let irc_response = irc_response.unwrap();
     if irc_response.is_none() {
-      continue;
+      return Err(anyhow!("Twitch IRC stream ended"));
     }
     match irc_response.unwrap().to_twitch_message_privmsg() {
       Err(_msg) => {
@@ -315,7 +385,7 @@ pub async fn start_twitch_monitor(mut ekb_conf_dirs: EkbConfigDirs, conf: EkbTwi
           chat_data.emotes.push(emote_data);
         }
         chat_data.emotes.sort_by_key(|e| e.loc.0 );
-        let _ = tx.send(Arc::new(chat_data));
+        let _ = chat_tx.send(Arc::new(chat_data));
       }
     }
   }
@@ -389,73 +459,46 @@ async fn connect_twitch_client(conf: &EkbTwitchConfig) -> Result<irc::client::Cl
 }
 
 #[allow(clippy::needless_return)] // 'return' statements make the intention more obvious.
-pub async fn get_or_create_config_emojikanban(config_update: EkbConfigUpdate, tx: mpsc::UnboundedSender<TwitchOAuthRcvr>) { // -> Result<(EkbConfigDirs, EkbTwitchConfig), String>
+pub async fn get_or_create_config_emojikanban(config_update: EkbConfigUpdate) -> anyhow::Result<(EkbConfigDirs, EkbTwitchConfig)> {
   let app_name = Some("emojikanban");
   let config_file = "config.kdl";
-  let config_kdl = 
-r#"bot-account bot-name                       // <- Replace 'bot-name' with the name of the account used to monitor chat
-channel     streamer-name                  // <- and 'streamer-name' with the streamer, most likely your own
-oauth       g0Bble0dEE0GukK0enCryPTIon0KEy // <- With or without "oauth:" prefix
-// The oauth should be generated from the account you use
-// as the 'bot-account'. If you use your streamer account,
-// you can use the same account name for 'bot-account' and
-// 'channel'. 'channel' is only used to select the irc channel to 
-// monitor for emotes, and eventually for chat.
-// 
-"#;
-  if let Some(app_dirs) = AppDirs::new(app_name, true) {
-    let mut config_path = app_dirs.config_dir;
-    if let Err(e) = std::fs::create_dir_all(&config_path) {
-      let e = anyhow!("Failed to create config dir: {}\nError: {}", config_path.display(), e);
-      let _ = tx.send(RcvrError(e));
-      return;
-    }
-    config_path.push(config_file);
-    // let mut cache_path = app_dirs.cache_dir;
-    let data_path = app_dirs.data_dir;
-    if let Err(e) = std::fs::create_dir_all(&data_path) {
-      let e = anyhow!("Failed to create data dir: {}\nError: {}", data_path.display(), e);
-      let _ = tx.send(RcvrError(e));
-      return;
-    }
-    match std::fs::exists(&config_path) {
-      Err(e)    => {
-        let e = anyhow!("Failed to check existence of config file: {}\nError: {}", config_path.display(), e);
-        let _ = tx.send(RcvrError(e));
-      }
-      Ok(false) => {
-        if let Err(e) = std::fs::write(&config_path, config_kdl) {
-          let e = anyhow!("Failed to write default config file: {}\nError: {}", config_path.display(), e);
-          let _ = tx.send(RcvrError(e));
-        } else {
-          let e = anyhow!("Default config.kdl created at {}", config_path.display());
-          let _ = tx.send(RcvrError(e));
-        }
-      }
-      Ok(true)  => {
-        // The file exists, now we need to validate it
-        match std::fs::read_to_string(&config_path) {
-          Err(e) => { 
-            let e = anyhow!("File exists but failed to read: {}\nError: {}", config_path.display(), e);
-            let _ = tx.send(RcvrError(e));
-          }
-          Ok(conf) => {
-            match validate_config(config_path, data_path, conf, config_update).await {
-              Ok(data) => { let _ = tx.send(NewConfigData(data)); }
-              Err(e) => { let _ = tx.send(RcvrError(e)); }
-            }
-          }
-        }
-      }
-    }
-  } else {
-    let e = anyhow!("Failed to get home directory. Cannot check for or create config file.");
-    let _ = tx.send(RcvrError(e));
+  let config_kdl = DEFAULT_CONFIG_KDL;
+  let app_dirs = AppDirs::new(app_name, true).ok_or_else(|| {
+    anyhow!("Failed to get home directory. Cannot check for or create config file.")
+  })?;
+  let config_dir = app_dirs.config_dir;
+  let data_dir = app_dirs.data_dir;
+  // let mut cache_dir = app_dirs.cache_dir;
+  std::fs::create_dir_all(&config_dir).map_err(|e| {
+    anyhow!("Failed to create config dir: {}\nError: {}", config_dir.display(), e)
+  })?;
+  std::fs::create_dir_all(&data_dir).map_err(|e|  {
+    anyhow!("Failed to create data dir: {}\nError: {}", data_dir.display(), e)
+  })?;
+  let config_path = config_dir.join(config_file);
+  let config_exists = config_path.try_exists().map_err(|e| {
+    anyhow!("Failed to check existence of config file: {}\nError: {}", config_path.display(), e)
+  })?;
+  if !config_exists {
+    std::fs::write(&config_path, config_kdl).map_err(|e| {
+      anyhow!("Failed to write default config file: {}\nError: {}", config_path.display(), e)
+    })?;
+    return Err(anyhow!(
+      "Default config.kdl created at {}\n
+      In OBS Studio, click `Tools -> EmojiKanBan Configuration`\n
+      to open the Properties window and enter your connection\n
+      details, then attempt to reconnect.", config_path.display()
+    ));
   }
+  // The file exists, now we need to validate it
+  let config_string = std::fs::read_to_string(&config_path).map_err(|e| {
+    anyhow!("File exists but failed to read: {}\nError: {}", config_path.display(), e)
+  })?;
+  validate_config(config_path, data_dir, config_string, config_update).await
 }
 
 #[allow(clippy::needless_return, unused)]
-async fn validate_config(mut config_path: PathBuf, data_path: PathBuf, conf: String, config_update: EkbConfigUpdate) -> Result<(EkbConfigDirs, EkbTwitchConfig), anyhow::Error> {
+async fn validate_config(mut config_path: PathBuf, data_path: PathBuf, conf: String, config_update: EkbConfigUpdate) -> Result<(EkbConfigDirs, EkbTwitchConfig)> {
   let mut doc_res: Result<KdlDocument, KdlError> = conf.parse();
   let mut write_changes = false;
   match doc_res {
@@ -541,6 +584,12 @@ pub struct ChatData {
   pub msg: String,
   pub uname_color: Option<Color>,
   pub emotes: Vec<EmoteData>
+}
+
+pub enum TwitchMgrCmd {
+  UpdateConfig(EkbConfigUpdate),
+  Reconnect,
+  Shutdown,
 }
 
 pub enum EmoteComEnum {

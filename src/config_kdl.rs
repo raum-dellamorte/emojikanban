@@ -150,6 +150,15 @@ pub fn validate_twitch_name(value: Cow<'_,str>) -> Option<String> {
   Some(value.to_ascii_lowercase())
 }
 
+pub const DEFAULT_CONFIG_KDL: &str = 
+r#"bot-account bot-name                       // <- Replace 'bot-name' with the name of the account used to monitor chat
+channel     streamer-name                  // <- and 'streamer-name' with the streamer, most likely your own
+oauth       g0Bble0dEE0GukK0enCryPTIon0KEy // <- With or without "oauth:" prefix
+// The oauth should be generated from the account you use as the
+// 'bot-account'. If you use your streamer account, you can use
+// the same account name for 'bot-account' and 'channel'.
+"#;
+
 pub const TWITCH_AUTH_URL: &str = "https://id.twitch.tv/oauth2/authorize?response_type=token&client_id=m0kk7y5gjs9qjfio2pw7hkw8iwaeft&redirect_uri=http://localhost:3000&scope=chat%3Aedit%20chat%3Aread";
 pub const TWITCH_CALLBACK_URL: &str = "http://localhost:3000/";
 

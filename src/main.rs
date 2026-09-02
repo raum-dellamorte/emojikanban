@@ -31,9 +31,9 @@ fn main() -> Result<(), anyhow::Error> {
   };
   
   let runtime = tokio::runtime::Runtime::new().unwrap();
-  let (oauth_tx, mut oauth_rx) = tokio::sync::mpsc::unbounded_channel();
+  let (_oauth_tx, mut oauth_rx) = tokio::sync::mpsc::unbounded_channel();
   let _handle = runtime.spawn(async {
-    emojikanban::get_or_create_config_emojikanban(config_update, oauth_tx).await;
+    let _ = emojikanban::get_or_create_config_emojikanban(config_update).await;
   });
   let (ekb_config_dirs, conf) = match oauth_rx.blocking_recv() {
     Some(emojikanban::plugin::TwitchOAuthRcvr::NewConfigData(data)) => data,
@@ -41,15 +41,18 @@ fn main() -> Result<(), anyhow::Error> {
     Some(emojikanban::plugin::TwitchOAuthRcvr::RcvrError(e)) => { panic!("Error getting config in main: {}", e) }
     None => { unreachable!() }
   };
-  let (tx, mut rx) = tokio::sync::broadcast::channel::<std::sync::Arc<emojikanban::ChatData>>(256);
+  let (chat_tx, mut rx) = tokio::sync::broadcast::channel::<std::sync::Arc<emojikanban::ChatData>>(256);
+  let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+  let _twitch_mgr_handle = Some(runtime.spawn(emojikanban::twitch_connection_mgr(cmd_rx, chat_tx.clone())));
   emojikanban::EKB_BROADCAST.set(
     emojikanban::EkbBroadcast {
       runtime: runtime.handle().clone(),
-      tx,
+      chat_tx: chat_tx.clone(),
+      cmd_tx,
     }
   ).unwrap();
   runtime.spawn(async move {
-    let _ = emojikanban::start_twitch_monitor(ekb_config_dirs, conf).await;
+    let _ = emojikanban::start_twitch_monitor(ekb_config_dirs, conf, chat_tx.clone()).await;
   });
   while let Ok(chat_msg) = rx.blocking_recv() {
     // match emote_data.as_ref() {
