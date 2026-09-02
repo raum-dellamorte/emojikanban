@@ -21,6 +21,9 @@ use {
   },
 };
 
+pub const GRAVITY: f32 = 1800.;
+pub const BOUNCE: f32 = 0.6;
+
 pub trait EmoteEffect {
   fn update_dimensions(&mut self, w: f32, h: f32);
   fn update(&mut self, seconds: f32);

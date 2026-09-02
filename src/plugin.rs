@@ -9,10 +9,6 @@ use {
     effects::*,
     ekb_broadcast,
     font_studio::*,
-    // plugin::{
-    //   TwitchConnectionStatus::*, // TwitchOAuthRcvr::*,
-    // },
-    // start_twitch_monitor,
   },
   image::{
     AnimationDecoder, DynamicImage, ImageFormat,
@@ -36,17 +32,14 @@ use {
   std::{
     borrow::Cow,
     collections::VecDeque,
-    // ops::Deref,
     sync::{
       Arc, Mutex,
     },
   },
   tokio::{
-    runtime::Handle,
     sync::{
       broadcast, mpsc, watch,
     },
-    // task::JoinHandle,
   }, 
 };
 
@@ -212,7 +205,6 @@ impl UpdateSource for EkbSettings {
 
 pub struct EmojiKanBan {
   source: WeakSourceRef,
-  _runtime: Handle,
   chat_rx: broadcast::Receiver<Arc<ChatData>>,
   emote_queue: VecDeque<EmoteOBS>,
   emote_queue_max_length: u32,
@@ -233,10 +225,7 @@ impl Sourceable for EmojiKanBan {
   }
   fn create(create: &mut CreatableSourceContext<Self>, mut source: SourceRef) -> Self {
     log::info!("Creating EmojiKanBan Context");
-    let (_runtime, chat_rx) = {
-      let broadcast = crate::ekb_broadcast();
-      (broadcast.runtime.clone(), broadcast.chat_tx.subscribe())
-    };
+    let chat_rx = ekb_broadcast().chat_tx.subscribe();
     let settings = &mut create.settings;
     let emote_queue_max_length = settings.get(obs_string!("emotes_max")).unwrap_or(200);
     let screen_w = settings.get(obs_string!("screen_width")).unwrap_or(1920);
@@ -249,7 +238,6 @@ impl Sourceable for EmojiKanBan {
     source.update_source_settings(settings);
     Self {
       source: source.downgrade(),
-      _runtime,
       chat_rx,
       emote_queue: vec![].into(),
       emote_queue_max_length,
@@ -262,9 +250,6 @@ impl Sourceable for EmojiKanBan {
     }
   }
 }
-
-const GRAVITY: f32 = 1800.;
-const BOUNCE: f32 = 0.6;
 
 impl GetNameSource for EmojiKanBan {
   fn get_name() -> ObsString {
