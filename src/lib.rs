@@ -305,24 +305,15 @@ pub async fn twitch_connection_mgr(
 pub async fn start_twitch_monitor(mut ekb_conf_dirs: EkbConfigDirs, conf: EkbTwitchConfig, chat_tx: broadcast::Sender<Arc<ChatData>>) -> anyhow::Result<()> {
   let emotes = match connect_sqlite(&mut ekb_conf_dirs) {
     Ok(emotes) => emotes,
-    Err(e) => {
-      // _ = tx.send(Arc::new(EmoteComEnum::SqliteConnectionFailure(Err(e.into()))));
-      return Err(e.into());
-    }
+    Err(e) => { return Err(e.into()); }
   };
   let mut client = match connect_twitch_client(&conf).await {
     Ok(client) => { client }
-    Err(e) => {
-      // _ = tx.send(Arc::new(EmoteComEnum::TwitchConnectionFailure(Err(e.into()))));
-      return Err(e.into());
-    }
+    Err(e) => { return Err(e.into()); }
   };
   let mut stream = match client.stream() {
     Ok(client) => { client }
-    Err(e) => {
-      // _ = tx.send(Arc::new(EmoteComEnum::TwitchConnectionFailure(Err(e.into()))));
-      return Err(e.into());
-    }
+    Err(e) => { return Err(e.into()); }
   };
   loop {
     let irc_response = stream.next().await.transpose();

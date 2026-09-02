@@ -66,7 +66,7 @@ impl EkbSettings {
   pub fn update_channel(&mut self, try_value: Cow<'_,str>) {
     let value = validate_twitch_name(try_value.clone());
     if value.is_none() {
-      log::warn!("bot account name entered failed to validate: {}", try_value);
+      log::warn!("channel name entered failed to validate: {}", try_value);
     }
     if let Ok(mut draft) = self.config_draft.lock() {
       draft.channel = value; // fixme!
@@ -105,7 +105,7 @@ impl GetNameSource for EkbSettings {
 
 impl GetPropertiesSource for EkbSettings {
   fn get_properties(&mut self) -> Properties {
-    let snapshot = self.cfg_rx.borrow().clone();
+    let snapshot = self.cfg_rx.borrow_and_update().clone();
     if let Some(snapshot) = snapshot && let Some(source) = self.source.upgrade() {
       let mut settings = source.get_settings();
       settings.set_string("twitch_bot_account", snapshot.bot_account);
@@ -113,10 +113,9 @@ impl GetPropertiesSource for EkbSettings {
     }
     let mut props = Properties::new();
     let cmd_tx = self.cmd_tx.clone();
-    props.add_button_with_refresh(
+    props.add_button(
       "twitch_authenticate".into(),
       "Request New Twitch OAuth Token And Connect".into(),
-      true,
       move || {
         log::info!("EmojiKanBan attempting to (re)authenticate Twitch for access to chat. Server starting on http://localhost:3000/");
         let cmd_tx = cmd_tx.clone();
@@ -147,10 +146,9 @@ impl GetPropertiesSource for EkbSettings {
     {
       let config_draft = self.config_draft.clone();
       let cmd_tx = self.cmd_tx.clone();
-      props.add_button_with_refresh(
+      props.add_button(
         "twitch_config_update".into(),
         "Apply Below Bot Account and Channel Values To Config".into(),
-        true,
         move || {
           log::info!("EmojiKanBan updating config.kdl with new bot-account/channel values.");
           let update = match config_draft.lock() {
@@ -436,19 +434,14 @@ impl Sourceable for ChattoKanBan {
     let settings = &mut create.settings;
     let chat_w = settings.get(obs_string!("chat_width")).unwrap_or(DEFAULT_CHAT_W);
     let chat_h = settings.get(obs_string!("chat_height")).unwrap_or(DEFAULT_CHAT_H);
-    // let screen_offset_x = settings.get(obs_string!("offset_x")).unwrap_or(0);
-    // let screen_offset_y = settings.get(obs_string!("offset_y")).unwrap_or(0);
     let font_studio = FontStudio::new(DEFAULT_CHAT_W, DEFAULT_CHAT_H);
     source.update_source_settings(settings);
     Self {
       source: source.downgrade(),
       chat_rx,
       font_studio,
-      // rng: rand::rng(),
       chat_w,
       chat_h,
-      // screen_offset_x,
-      // screen_offset_y,
     }
   }
 }
@@ -502,18 +495,7 @@ impl GetPropertiesSource for ChattoKanBan {
         obs_string!("always_draw_bg"),
         obs_string!("Always Draw Chat Background"),
         BoolProp,
-      )
-      // .add(
-      //   obs_string!("offset_x"),
-      //   obs_string!("Offset relative to the top left screen corner. X Offset:"),
-      //   NumberProp::new_int().with_range(1u32..=3840 * 3),
-      // )
-      // .add(
-      //   obs_string!("offset_y"),
-      //   obs_string!("Offset relative to the top left screen corner. Y Offset:"),
-      //   NumberProp::new_int().with_range(1u32..=3840 * 3),
-      // )
-    ;
+      );
     props
   }
 }
@@ -532,20 +514,12 @@ impl UpdateSource for ChattoKanBan {
     if let Some(always_draw_bg) = settings.get(obs_string!("always_draw_bg")) {
       data.font_studio.always_draw_bg = always_draw_bg;
     }
-    // if let Some(offset_x) = settings.get(obs_string!("offset_x")) {
-    //   data.screen_offset_x = offset_x;
-    // }
-    // if let Some(offset_y) = settings.get(obs_string!("offset_y")) {
-    //   data.screen_offset_y = offset_y;
-    // }
   }
 }
 
 impl VideoTickSource for ChattoKanBan {
   fn video_tick(&mut self, seconds: f32) {
     let data: &mut ChattoKanBan = self;
-    // let w = data.screen_w as f32;
-    // let h = data.screen_h as f32;
     loop { match data.chat_rx.try_recv() {
       Ok(ref chat_msg) => { data.font_studio.add_chat_msg(chat_msg.clone()); }
       Err(broadcast::error::TryRecvError::Lagged(skipped)) => {
@@ -571,11 +545,6 @@ impl VideoRenderSource for ChattoKanBan {
         obs_source_set_flags(source as *mut obs_source, OBS_SOURCE_CUSTOM_DRAW);
       }
       obs_enter_graphics();
-      // for emote in self.emote_queue.iter_mut() {
-      //   if let Some(effect) = emote.effect.as_ref() {
-      //     effect.draw(emote.current_frame());
-      //   }
-      // }
       self.font_studio.draw();
       obs_leave_graphics();
     }
@@ -690,10 +659,3 @@ pub enum TwitchOAuthRcvr {
   NewConfigData((EkbConfigDirs, EkbTwitchConfig)),
   RcvrError(anyhow::Error),
 }
-
-// #[derive(Debug)]
-// enum TwitchConnectionStatus {
-//   InitConnection,
-//   AwaitingConfig,
-//   Connected,
-// }
