@@ -592,13 +592,6 @@ pub enum TwitchMgrCmd {
   Shutdown,
 }
 
-pub enum EmoteComEnum {
-  // Data(EmoteData),
-  Chat(ChatData),
-  SqliteConnectionFailure(anyhow::Result<(),anyhow::Error>),
-  TwitchConnectionFailure(anyhow::Result<(),anyhow::Error>),
-}
-
 pub struct ColorConverter<T>(Option<T>);
 
 impl From<Option<twitch_message::Color>> for ColorConverter<Color> {
