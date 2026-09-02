@@ -174,17 +174,17 @@ impl Module for EKBModule {
       .enable_video_tick()
       .build();
     load_context.register_source(emojikanban_info);
-    // let chatto_source = load_context
-    //   .create_source_builder::<ChattoKanBan>()
-    //   .enable_get_name()
-    //   .enable_get_properties()
-    //   .enable_get_width()
-    //   .enable_get_height()
-    //   .enable_update()
-    //   .enable_video_render()
-    //   .enable_video_tick()
-    //   .build();
-    // load_context.register_source(chatto_source);
+    let chatto_source = load_context
+      .create_source_builder::<ChattoKanBan>()
+      .enable_get_name()
+      .enable_get_properties()
+      .enable_get_width()
+      .enable_get_height()
+      .enable_update()
+      .enable_video_render()
+      .enable_video_tick()
+      .build();
+    load_context.register_source(chatto_source);
     true
   }
   fn unload(&mut self) {

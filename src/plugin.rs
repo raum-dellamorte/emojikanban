@@ -253,7 +253,7 @@ impl Sourceable for EmojiKanBan {
 
 impl GetNameSource for EmojiKanBan {
   fn get_name() -> ObsString {
-    obs_string!("emojikanban")
+    obs_string!("EmojiKanBan")
   }
 }
 
@@ -333,7 +333,7 @@ impl VideoTickSource for EmojiKanBan {
     // data.check_twitch_connection();
     loop { match data.chat_rx.try_recv() {
       Ok(ref chat_msg) => {
-        data.font_studio.add_chat_msg(chat_msg.clone());
+        // data.font_studio.add_chat_msg(chat_msg.clone());
         for emote_data in chat_msg.emotes.iter() {
           let emote_data = emote_data.clone();
           if (data.emote_queue.len() as u32) < data.emote_queue_max_length {
@@ -403,6 +403,152 @@ impl VideoRenderSource for EmojiKanBan {
           effect.draw(emote.current_frame());
         }
       }
+      self.font_studio.draw();
+      obs_leave_graphics();
+    }
+  }
+}
+
+pub struct ChattoKanBan {
+  source: WeakSourceRef,
+  chat_rx: broadcast::Receiver<Arc<ChatData>>,
+  font_studio: FontStudio,
+  // rng: ThreadRng,
+  screen_w: u32,
+  screen_h: u32,
+  screen_offset_x: u32,
+  screen_offset_y: u32,
+}
+
+impl Sourceable for ChattoKanBan {
+  fn get_id() -> ObsString {
+    obs_string!("chattokanban")
+  }
+  fn get_type() -> SourceType {
+    SourceType::Input
+  }
+  fn create(create: &mut CreatableSourceContext<Self>, mut source: SourceRef) -> Self {
+    log::info!("Creating ChattoKanBan Context");
+    let chat_rx = ekb_broadcast().chat_tx.subscribe();
+    let settings = &mut create.settings;
+    let screen_w = settings.get(obs_string!("screen_width")).unwrap_or(1920);
+    let screen_h = settings.get(obs_string!("screen_height")).unwrap_or(1080);
+    let screen_offset_x = settings.get(obs_string!("offset_x")).unwrap_or(0);
+    let screen_offset_y = settings.get(obs_string!("offset_y")).unwrap_or(0);
+    let font_studio = FontStudio::new();
+    source.update_source_settings(settings);
+    Self {
+      source: source.downgrade(),
+      chat_rx,
+      font_studio,
+      // rng: rand::rng(),
+      screen_w,
+      screen_h,
+      screen_offset_x,
+      screen_offset_y,
+    }
+  }
+}
+
+impl GetNameSource for ChattoKanBan {
+  fn get_name() -> ObsString {
+    obs_string!("ChattoKanBan")
+  }
+}
+
+impl GetWidthSource for ChattoKanBan {
+  fn get_width(&mut self) -> u32 {
+    self.screen_w
+  }
+}
+
+impl GetHeightSource for ChattoKanBan {
+  fn get_height(&mut self) -> u32 {
+    self.screen_h
+  }
+}
+
+impl GetPropertiesSource for ChattoKanBan {
+  fn get_properties(&mut self) -> Properties {
+    let mut props = Properties::new();
+    props
+      .add(
+        obs_string!("screen_width"),
+        obs_string!("Screen width"),
+        NumberProp::new_int().with_range(1u32..=3840 * 3),
+      )
+      .add(
+        obs_string!("screen_height"),
+        obs_string!("Screen height"),
+        NumberProp::new_int().with_range(1u32..=3840 * 3),
+      )
+      .add(
+        obs_string!("offset_x"),
+        obs_string!("Offset relative to the top left screen corner. X Offset:"),
+        NumberProp::new_int().with_range(1u32..=3840 * 3),
+      )
+      .add(
+        obs_string!("offset_y"),
+        obs_string!("Offset relative to the top left screen corner. Y Offset:"),
+        NumberProp::new_int().with_range(1u32..=3840 * 3),
+      );
+    props
+  }
+}
+
+impl UpdateSource for ChattoKanBan {
+  fn update(&mut self, settings: &mut DataObj, _context: &mut GlobalContext) {
+    let data = self;
+    if let Some(screen_width) = settings.get(obs_string!("screen_width")) {
+      data.screen_w = screen_width;
+    }
+    if let Some(screen_height) = settings.get(obs_string!("screen_height")) {
+      data.screen_h = screen_height;
+    }
+    if let Some(offset_x) = settings.get(obs_string!("offset_x")) {
+      data.screen_offset_x = offset_x;
+    }
+    if let Some(offset_y) = settings.get(obs_string!("offset_y")) {
+      data.screen_offset_y = offset_y;
+    }
+  }
+}
+
+impl VideoTickSource for ChattoKanBan {
+  fn video_tick(&mut self, seconds: f32) {
+    let data: &mut ChattoKanBan = self;
+    // let w = data.screen_w as f32;
+    // let h = data.screen_h as f32;
+    loop { match data.chat_rx.try_recv() {
+      Ok(ref chat_msg) => { data.font_studio.add_chat_msg(chat_msg.clone()); }
+      Err(broadcast::error::TryRecvError::Lagged(skipped)) => {
+        log::warn!("Skipped {} stale chat messages", skipped);
+      }
+      Err(broadcast::error::TryRecvError::Empty) => break,
+      Err(broadcast::error::TryRecvError::Closed) => {
+        log::error!("ChattoKanBan chat broadcast closed");
+        break;
+      }
+    }}
+    // Keep only the living
+    data.font_studio.update(seconds);
+  }
+}
+
+impl VideoRenderSource for ChattoKanBan {
+  fn video_render(&mut self, _context: &mut GlobalContext, _render: &mut VideoRenderContext) {
+    let data: &mut ChattoKanBan = self;
+    unsafe {
+      if let Some(source) = data.source.upgrade() {
+        let source: *mut u8 = source.id() as *mut u8;
+        obs_source_set_flags(source as *mut obs_source, OBS_SOURCE_CUSTOM_DRAW);
+      }
+      obs_enter_graphics();
+      // for emote in self.emote_queue.iter_mut() {
+      //   if let Some(effect) = emote.effect.as_ref() {
+      //     effect.draw(emote.current_frame());
+      //   }
+      // }
       self.font_studio.draw();
       obs_leave_graphics();
     }
