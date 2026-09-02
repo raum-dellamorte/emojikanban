@@ -39,6 +39,7 @@ pub struct FontStudio {
   chat_metrics: (f32,f32),
   chat_margin: i32,
   chat_width: u32,
+  pub always_draw_bg: bool,
 }
 
 impl FontStudio {
@@ -66,6 +67,7 @@ impl FontStudio {
       chat_metrics: (30.0,34.0),
       chat_margin: 10,
       chat_width: 300,
+      always_draw_bg: false,
     }
   }
   pub fn update_dimensions(&mut self, w: u32, h: u32) {
@@ -233,7 +235,7 @@ impl FontStudio {
     self.chat_blocks.push_back(cblk);
   }
   pub fn draw(&self) {
-    if !self.chat_blocks.is_empty() && let Some(bg) = self.chat_bg_tex.as_ref() {
+    if (self.always_draw_bg || !self.chat_blocks.is_empty()) && let Some(bg) = self.chat_bg_tex.as_ref() {
       bg.draw(self.chat_offset.0, self.chat_offset.1, 0, 0, false);
     }
     for tblk in self.text_blocks.iter() {

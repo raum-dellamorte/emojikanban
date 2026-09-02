@@ -431,7 +431,7 @@ impl Sourceable for ChattoKanBan {
     log::info!("Creating ChattoKanBan Context");
     let chat_rx = ekb_broadcast().chat_tx.subscribe();
     let settings = &mut create.settings;
-    let chat_w = settings.get(obs_string!("chat_width")).unwrap_or(300);
+    let chat_w = settings.get(obs_string!("chat_width")).unwrap_or(320);
     let chat_h = settings.get(obs_string!("chat_height")).unwrap_or(700);
     // let screen_offset_x = settings.get(obs_string!("offset_x")).unwrap_or(0);
     // let screen_offset_y = settings.get(obs_string!("offset_y")).unwrap_or(0);
@@ -482,6 +482,11 @@ impl GetPropertiesSource for ChattoKanBan {
         obs_string!("Chat Height"),
         NumberProp::new_int().with_range(150u32..=2160),
       )
+      .add(
+        obs_string!("always_draw_bg"),
+        obs_string!("Always Draw Chat Background"),
+        BoolProp,
+      )
       // .add(
       //   obs_string!("offset_x"),
       //   obs_string!("Offset relative to the top left screen corner. X Offset:"),
@@ -507,6 +512,9 @@ impl UpdateSource for ChattoKanBan {
       data.chat_h = chat_h;
       data.font_studio.update_dimensions(data.chat_w, data.chat_h);
       // data.chat_layout_rebuild()
+    }
+    if let Some(always_draw_bg) = settings.get(obs_string!("always_draw_bg")) {
+      data.font_studio.always_draw_bg = always_draw_bg;
     }
     // if let Some(offset_x) = settings.get(obs_string!("offset_x")) {
     //   data.screen_offset_x = offset_x;
