@@ -153,7 +153,7 @@ impl FontStudio {
         if emote.loc.0 >= i {
           filtered.push_str( &msg.msg[i..emote.loc.0] );
         }
-        filtered.push_str( EMOTE_PLACEHOLDER );
+        filtered.push_str( EMOTE_MARKER );
         if emote.loc.1 > i { i = emote.loc.1; }
       }
       if i < msg.msg.len() { filtered.push_str( &msg.msg[i..] ); }
@@ -161,10 +161,14 @@ impl FontStudio {
     };
     let msg_txt: &str = &msg_string;
     let msg_attrs = Attrs::new().color(Color::rgb(0xC8, 0xC8, 0xC8));
-    let emote_attrs = Attrs::new().color(Color::rgba(0, 0, 0, 0));
     buffer.set_size(Some((inner_w as i32 - msg_indent) as f32), None);
     let emote_size = self.chat_metrics.1.ceil() as u32;
     let emote_size = emote_size.saturating_sub(1);
+    let emote_attrs = Attrs::new().color(
+      Color::rgba(0, 0, 0, 0)
+    ).metrics(
+      Metrics::new(emote_size as f32, emote_size as f32)
+    );
     let mut emote_pos = vec![None;msg.emotes.len()];
     let img_h = if msg.emotes.len() == 0 {
       buffer.set_text(msg_txt, &msg_attrs, Shaping::Advanced, None);
@@ -172,7 +176,7 @@ impl FontStudio {
       buffer.layout_runs().map(|run| run.line_top + run.line_height)
         .fold(0.0f32, f32::max).ceil() as u32 + (2 * self.chat_margin as u32)
     } else {
-      let mut parts = msg_string.split(EMOTE_PLACEHOLDER).peekable();
+      let mut parts = msg_string.split(EMOTE_MARKER).peekable();
       let mut spans = Vec::new();
       let mut emote_index = 0;
       while let Some(text) = parts.next() {
@@ -180,7 +184,8 @@ impl FontStudio {
           spans.push((text, msg_attrs.clone()));
         }
         if parts.peek().is_some() {
-          spans.push((EMOTE_PLACEHOLDER, emote_attrs.clone().metadata(emote_index + 1)));
+          spans.push((EMOTE_BREAK, msg_attrs.clone()));
+          spans.push((EMOTE_GLYPH, emote_attrs.clone().metadata(emote_index + 1)));
           emote_index += 1;
         }
       }
@@ -470,7 +475,10 @@ fn alpha_over(destination: &mut Rgba<u8>, source: Rgba<u8>) {
   destination[3] = (output_alpha * 255.0).round() as u8;
 }
 
-const EMOTE_PLACEHOLDER: &str = "\u{2003}";
+// const EMOTE_PLACEHOLDER: &str = "\u{2003}";
+const EMOTE_MARKER: &str = "\u{FFFC}";
+const EMOTE_BREAK: &str = "\u{200B}";
+const EMOTE_GLYPH: &str = "\u{25A1}";
 const MSG_PTR: &str = "~> ";
 const MIN_WIDTH: u32 = 40;
 pub const LOREM_IPSUM: &str = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, \
