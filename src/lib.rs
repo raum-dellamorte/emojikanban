@@ -280,11 +280,28 @@ pub async fn twitch_connection_mgr(
             );
           }
         }
-        // Add a reconnect delay here.
-        tokio::time::sleep(
-          std::time::Duration::from_secs(5),
-        ).await;
-        config_update = EkbConfigUpdate::default();
+        // reconnect delay
+        tokio::select!{
+          biased;
+          command = cmd_rx.recv() => {
+            match command {
+              Some(TwitchMgrCmd::UpdateConfig(update)) => {
+                config_update = update;
+              }
+              Some(TwitchMgrCmd::Reconnect) => {
+                config_update = EkbConfigUpdate::default();
+              }
+              Some(TwitchMgrCmd::Shutdown) | None => {
+                return;
+              }
+            }
+          }
+          _ = tokio::time::sleep(
+            std::time::Duration::from_secs(5),
+          ) => {
+            config_update = EkbConfigUpdate::default();
+          }
+        }
       }
       command = cmd_rx.recv() => {
         monitor.abort();
