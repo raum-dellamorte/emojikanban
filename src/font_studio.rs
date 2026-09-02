@@ -17,7 +17,10 @@ use {
     // codecs::gif::GifDecoder,
   },
   obs_wrapper::graphics::*,
-  std::collections::VecDeque,
+  std::{
+    collections::VecDeque,
+    sync::Arc,
+  },
 };
 
 pub struct FontStudio {
@@ -99,7 +102,7 @@ impl FontStudio {
     let tblk = TextBlock { tex, life, x_offset, y_offset, };
     self.text_blocks.push_back(tblk);
   }
-  pub fn add_chat_msg(&mut self, msg: ChatData) {
+  pub fn add_chat_msg(&mut self, msg: Arc<ChatData>) {
     let mut buffer = self.buffer.borrow_with(&mut self.font_system);
     let (x_offset, y_offset) = self.chat_offset;
     let (font_size, line_height) = self.chat_metrics;

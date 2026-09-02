@@ -41,7 +41,7 @@ fn main() -> Result<(), anyhow::Error> {
     Some(emojikanban::plugin::TwitchOAuthRcvr::RcvrError(e)) => { panic!("Error getting config in main: {}", e) }
     None => { unreachable!() }
   };
-  let (tx, mut rx) = tokio::sync::broadcast::channel::<std::sync::Arc<emojikanban::EmoteComEnum>>(256);
+  let (tx, mut rx) = tokio::sync::broadcast::channel::<std::sync::Arc<emojikanban::ChatData>>(256);
   emojikanban::EKB_BROADCAST.set(
     emojikanban::EkbBroadcast {
       runtime: runtime.handle().clone(),
@@ -49,25 +49,25 @@ fn main() -> Result<(), anyhow::Error> {
     }
   ).unwrap();
   runtime.spawn(async move {
-    emojikanban::start_twitch_monitor(ekb_config_dirs, conf).await;
+    let _ = emojikanban::start_twitch_monitor(ekb_config_dirs, conf).await;
   });
-  while let Ok(emote_data) = rx.blocking_recv() {
-    match emote_data.as_ref() {
-      emojikanban::EmoteComEnum::Chat(chat_msg) => {
+  while let Ok(chat_msg) = rx.blocking_recv() {
+    // match emote_data.as_ref() {
+      // emojikanban::EmoteComEnum::Chat(chat_msg) => {
         for emote_data in chat_msg.emotes.iter() {
           println!("Emote :{}: used.", emote_data.name);
         }
-      }
-      emojikanban::EmoteComEnum::SqliteConnectionFailure(e) => {
-        // let e = e.clone();
-        // let err = e.as_ref();
-        // let error = e.as_ref().as_ref().unwrap_err();
-        log::error!("Failed to connect Sqlite: {}", e.as_ref().as_ref().unwrap_err());
-      }
-      emojikanban::EmoteComEnum::TwitchConnectionFailure(e) => {
-        log::error!("Twitch monitor died: {}", e.as_ref().as_ref().unwrap_err());
-      }
-    }
+      // }
+      // emojikanban::EmoteComEnum::SqliteConnectionFailure(e) => {
+      //   // let e = e.clone();
+      //   // let err = e.as_ref();
+      //   // let error = e.as_ref().as_ref().unwrap_err();
+      //   log::error!("Failed to connect Sqlite: {}", e.as_ref().as_ref().unwrap_err());
+      // }
+      // emojikanban::EmoteComEnum::TwitchConnectionFailure(e) => {
+      //   log::error!("Twitch monitor died: {}", e.as_ref().as_ref().unwrap_err());
+      // }
+    // }
   }
   
   Ok(())

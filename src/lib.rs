@@ -81,7 +81,7 @@ pub fn ekb_broadcast() -> &'static EkbBroadcast {
 #[derive(Debug)]
 pub struct EkbBroadcast {
   pub runtime: Handle,
-  pub tx: broadcast::Sender<Arc<EmoteComEnum>>,
+  pub tx: broadcast::Sender<Arc<ChatData>>,
 }
 
 struct EKBModule {
@@ -105,7 +105,7 @@ impl Module for EKBModule {
     let _ = obs_wrapper::log::Logger::new().with_promote_debug(PROMOTE_DEBUG_LOGS).init();
     // Launch a tokio runtime
     let runtime = tokio::runtime::Runtime::new().unwrap();
-    let (tx, _) = broadcast::channel::<Arc<EmoteComEnum>>(256);
+    let (tx, _) = broadcast::channel::<Arc<ChatData>>(256);
     EKB_BROADCAST.set(
       EkbBroadcast {
         runtime: runtime.handle().clone(),
@@ -212,34 +212,43 @@ unsafe extern "C" fn open_ekb_config(private_data: *mut c_void) {
   }
 }
 
-pub async fn start_twitch_monitor(mut ekb_conf_dirs: EkbConfigDirs, conf: EkbTwitchConfig) {
+pub async fn twitch_connection_mgr() {
+  todo!()
+}
+
+pub async fn start_twitch_monitor(mut ekb_conf_dirs: EkbConfigDirs, conf: EkbTwitchConfig) -> anyhow::Result<()> {
   let tx = ekb_broadcast().tx.clone();
   let emotes = match connect_sqlite(&mut ekb_conf_dirs) {
     Ok(emotes) => emotes,
     Err(e) => {
-      _ = tx.send(Arc::new(EmoteComEnum::SqliteConnectionFailure(Err(e.into()))));
-      return;
+      // _ = tx.send(Arc::new(EmoteComEnum::SqliteConnectionFailure(Err(e.into()))));
+      return Err(e.into());
     }
   };
   let mut client = match connect_twitch_client(&conf).await {
     Ok(client) => { client }
     Err(e) => {
-      _ = tx.send(Arc::new(EmoteComEnum::TwitchConnectionFailure(Err(e.into()))));
-      return;
+      // _ = tx.send(Arc::new(EmoteComEnum::TwitchConnectionFailure(Err(e.into()))));
+      return Err(e.into());
     }
   };
   let mut stream = match client.stream() {
     Ok(client) => { client }
     Err(e) => {
-      _ = tx.send(Arc::new(EmoteComEnum::TwitchConnectionFailure(Err(e.into()))));
-      return;
+      // _ = tx.send(Arc::new(EmoteComEnum::TwitchConnectionFailure(Err(e.into()))));
+      return Err(e.into());
     }
   };
-  while let Some(irc_response) = stream.next().await.transpose().unwrap_or_else(|e| {
-    _ = tx.send(Arc::new(EmoteComEnum::TwitchConnectionFailure(Err(e.into()))));
-    None
-  }) {
-    match irc_response.to_twitch_message_privmsg() {
+  loop {
+    let irc_response = stream.next().await.transpose();
+    if irc_response.is_err() {
+      return Err(anyhow!("IRC error {}", irc_response.unwrap_err()));
+    }
+    let irc_response = irc_response.unwrap();
+    if irc_response.is_none() {
+      continue;
+    }
+    match irc_response.unwrap().to_twitch_message_privmsg() {
       Err(_msg) => {
         // Do something with this?
       }
@@ -299,7 +308,7 @@ pub async fn start_twitch_monitor(mut ekb_conf_dirs: EkbConfigDirs, conf: EkbTwi
           chat_data.emotes.push(emote_data);
         }
         chat_data.emotes.sort_by_key(|e| e.loc.0 );
-        let _ = tx.send(Arc::new(EmoteComEnum::Chat(chat_data)));
+        let _ = tx.send(Arc::new(chat_data));
       }
     }
   }

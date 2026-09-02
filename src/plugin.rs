@@ -1,6 +1,6 @@
 use {
   crate::{
-    EmoteComEnum, EmoteData,
+    ChatData, /*EmoteComEnum,*/ EmoteData,
     config_kdl::{
       EkbConfigDirs, EkbConfigUpdate, EkbTwitchConfig,
       TWITCH_CALLBACK_URL,
@@ -65,7 +65,6 @@ pub struct EkbSettings {
   twitch_status: TwitchConnectionStatus,
   oauth_tx: Option<UnboundedSender<TwitchOAuthRcvr>>,
   oauth_rx: Option<UnboundedReceiver<TwitchOAuthRcvr>>,
-  _emote_rx: broadcast::Receiver<Arc<EmoteComEnum>>, // EmoteData -> anyhow::Result<EmoteData, String> to return error to try to reconnect to Twitch
 }
 
 impl Drop for EkbSettings {
@@ -152,7 +151,7 @@ impl EkbSettings {
             handle.abort();
           }
           self.twitch_handle = Some(self.runtime.spawn(async move {
-            start_twitch_monitor(ekb_config_dirs, conf).await;
+            let _ = start_twitch_monitor(ekb_config_dirs, conf).await;
           }));
           self.twitch_status = Connected;
         }
@@ -227,7 +226,7 @@ impl Sourceable for EkbSettings {
     let settings = &mut create.settings;
     
     source.update_source_settings(settings);
-    Self {
+    let mut ekb_settings = Self {
       source: source.downgrade(),
       runtime: ekb_broadcast().runtime.clone(),
       need_oauth_update: Arc::new(Mutex::new(false)),
@@ -239,8 +238,9 @@ impl Sourceable for EkbSettings {
       twitch_status: InitConnection,
       oauth_tx: None,
       oauth_rx: None,
-      _emote_rx: ekb_broadcast().tx.subscribe(),
-    }
+    };
+    ekb_settings.check_twitch_connection();
+    ekb_settings
   }
 }
 
@@ -324,7 +324,7 @@ impl UpdateSource for EkbSettings {
 pub struct EmojiKanBan {
   source: WeakSourceRef,
   _runtime: Handle,
-  chat_rx: broadcast::Receiver<Arc<EmoteComEnum>>,
+  chat_rx: broadcast::Receiver<Arc<ChatData>>,
   emote_queue: VecDeque<EmoteOBS>,
   emote_queue_max_length: u32,
   font_studio: FontStudio,
@@ -457,54 +457,44 @@ impl VideoTickSource for EmojiKanBan {
     let w = data.screen_w as f32;
     let h = data.screen_h as f32;
     // data.check_twitch_connection();
-    while let Ok(ref emote_data) = data.chat_rx.try_recv() { match emote_data.as_ref() {
-      EmoteComEnum::Chat(chat_msg) => {
-        data.font_studio.add_chat_msg(chat_msg.clone());
-        for emote_data in chat_msg.emotes.iter() {
-          let emote_data = emote_data.clone();
-          if (data.emote_queue.len() as u32) < data.emote_queue_max_length {
-            let mut emote: EmoteOBS = emote_data.into();
-            if emote.tex_vec.is_empty() || emote.frame >= emote.tex_vec.len() {
-              log::error!("tex_vec empty or current frame out of bounds: len: {} frame: {}", emote.tex_vec.len(), emote.frame);
-              continue;
-            }
-            let (ew, eh) = (emote.tex_vec[emote.frame].width() as f32, emote.tex_vec[emote.frame].height() as f32);
-            let picker = data.rng.random_range(1..=100);
-            emote.effect = Some(match picker {
-              1..=10 => {
-                SlideUpEffect::init(
-                  w,h,ew,eh,
-                  &mut data.rng,
-                )
-              }
-              11..=30 => {
-                InchWormEffect::init(
-                  w, h, ew, eh,
-                  &mut data.rng
-                )
-              }
-              31..=100 => {
-                GravityEffect::init(
-                  w,h,ew,eh,
-                  GRAVITY, BOUNCE,
-                  &mut data.rng,
-                )
-              }
-              _ => { unreachable!() }
-            });
-            data.emote_queue.push_back(emote);
+    while let Ok(ref chat_msg) = data.chat_rx.try_recv() {
+      data.font_studio.add_chat_msg(chat_msg.clone());
+      for emote_data in chat_msg.emotes.iter() {
+        let emote_data = emote_data.clone();
+        if (data.emote_queue.len() as u32) < data.emote_queue_max_length {
+          let mut emote: EmoteOBS = emote_data.into();
+          if emote.tex_vec.is_empty() || emote.frame >= emote.tex_vec.len() {
+            log::error!("tex_vec empty or current frame out of bounds: len: {} frame: {}", emote.tex_vec.len(), emote.frame);
+            continue;
           }
+          let (ew, eh) = (emote.tex_vec[emote.frame].width() as f32, emote.tex_vec[emote.frame].height() as f32);
+          let picker = data.rng.random_range(1..=100);
+          emote.effect = Some(match picker {
+            1..=10 => {
+              SlideUpEffect::init(
+                w,h,ew,eh,
+                &mut data.rng,
+              )
+            }
+            11..=30 => {
+              InchWormEffect::init(
+                w, h, ew, eh,
+                &mut data.rng
+              )
+            }
+            31..=100 => {
+              GravityEffect::init(
+                w,h,ew,eh,
+                GRAVITY, BOUNCE,
+                &mut data.rng,
+              )
+            }
+            _ => { unreachable!() }
+          });
+          data.emote_queue.push_back(emote);
         }
       }
-      EmoteComEnum::TwitchConnectionFailure(e) => {
-        log::error!("Twitch Connection Failure: {}", e.as_ref().as_ref().unwrap_err());
-        // data.twitch_status = InitConnection;
-        // data.twitch_handle.take();
-      }
-      EmoteComEnum::SqliteConnectionFailure(e) => {
-        log::error!("Sqlite Connection Failure: {}", e.as_ref().as_ref().unwrap_err());
-      }
-    }}
+    }
     // Animate emotes in queue
     for emote in data.emote_queue.iter_mut() {
       emote.update(seconds);
