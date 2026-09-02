@@ -408,6 +408,11 @@ pub fn start_youtube_monitor(mut ekb_conf_dirs: EkbConfigDirs, conf: EkbYouTubeC
   Ok(())
 }
 
+#[allow(dead_code,unused)]
+pub fn start_youtube_monitor(mut ekb_conf_dirs: EkbConfigDirs, conf: EkbYouTubeConfig, tx: UnboundedSender<EmoteData>) -> Result<(), anyhow::Error> {
+  Ok(())
+}
+
 trait ToTwitchMessagePrivmsg: Sized {
   fn to_twitch_message_privmsg(self) -> Result<twitch_message::messages::Privmsg<'static>, Self>;
 }

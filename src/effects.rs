@@ -268,3 +268,71 @@ impl EmoteEffect for InchWormEffect {
   }
 }
 
+pub struct JumpingManEffect {
+  screen_w: f32,
+  screen_h: f32,
+  emote_w: f32,
+  emote_h: f32,
+  life_total: f32,
+  life_lived: f32,
+  g: f32,
+  bounce: f32,
+  pos: Vec2,
+  vel: Vec2,
+  scl: Vec2,
+}
+
+impl JumpingManEffect {
+  pub fn init(screen_w: f32, screen_h: f32, emote_w: f32, emote_h: f32, gravity: f32, bounce: f32, rng: &mut ThreadRng) -> Box<dyn EmoteEffect + 'static> {
+    let mut pos = Vec2::ZERO;
+    let mut vel = Vec2::ZERO;
+    let scl = Vec2::ONE;
+    pos.x = rng.random_range(0.1..0.9) as f32 * screen_w;
+    vel.x = rng.random_range(-0.15..0.15) * screen_w;
+    let life_total = rng.random_range(2.0..5.0);
+    Box::new(Self {
+      screen_w, screen_h,
+      emote_w, emote_h,
+      life_total,
+      life_lived: 0.,
+      g: gravity,
+      bounce,
+      pos, vel, scl,
+    })
+  }
+}
+
+impl EmoteEffect for JumpingManEffect {
+  fn update_dimensions(&mut self, w: f32, h: f32) {
+    (self.screen_w, self.screen_h) = (w, h);
+  }
+  fn update(&mut self, seconds: f32) {
+    self.life_lived += seconds;
+    let (w, h) = (self.screen_w, self.screen_h);
+    let ew = self.emote_w * self.scl.x;
+    let eh = self.emote_h * self.scl.y;
+    let x = &mut self.pos.x;
+    let y = &mut self.pos.y;
+    let vx = &mut self.vel.x;
+    let vy = &mut self.vel.y;
+    // Update velocity
+    *vy += self.g * seconds;
+    // Apply velocity
+    *x += *vx * seconds;
+    *y += *vy * seconds;
+    // Bounce
+    let floor: f32 = h - eh;
+    if *y > floor {
+      *y = floor;
+      *vy = -*vy * self.bounce;
+    }
+    if *x < 0. || *x >= w - ew {
+      *vx = -*vx;
+    }
+  }
+  fn draw(&self, tex: &GraphicsTexture) {
+    tex.draw(self.pos.x as i32, self.pos.y as i32, 0, 0, false);
+  }
+  fn is_alive(&self) -> bool { self.life_lived < self.life_total }
+}
+
