@@ -69,7 +69,7 @@ impl EkbSettings {
       log::warn!("channel name entered failed to validate: {}", try_value);
     }
     if let Ok(mut draft) = self.config_draft.lock() {
-      draft.channel = value; // fixme!
+      draft.channel = value;
     } else {
       log::error!("Failed to lock config_draft.")
     }
@@ -443,7 +443,9 @@ impl Sourceable for ChattoKanBan {
     let settings = &mut create.settings;
     let chat_w = settings.get(obs_string!("chat_width")).unwrap_or(DEFAULT_CHAT_W);
     let chat_h = settings.get(obs_string!("chat_height")).unwrap_or(DEFAULT_CHAT_H);
-    let font_studio = FontStudio::new(DEFAULT_CHAT_W, DEFAULT_CHAT_H);
+    let always_draw_bg = settings.get(obs_string!("always_draw_bg")).unwrap_or(false);
+    let mut font_studio = FontStudio::new(chat_w, chat_h);
+    font_studio.always_draw_bg = always_draw_bg;
     source.update_source_settings(settings);
     Self {
       source: source.downgrade(),
@@ -482,6 +484,10 @@ impl GetDefaultsSource for ChattoKanBan {
     settings.set_default::<u32>(
       obs_string!("chat_height"),
       DEFAULT_CHAT_H
+    );
+    settings.set_default::<bool>(
+      obs_string!("always_draw_bg"),
+      false,
     );
   }
 }
