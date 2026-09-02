@@ -43,6 +43,11 @@ use {
   }, 
 };
 
+/// Dummy Source to house the main Properties dialog for EmojiKanBan.
+/// 
+/// Any project-wide settings such as connection settings for
+/// Twitch and eventually YouTube are modified through the 
+/// Properties dialog provided by this Source.
 pub struct EkbSettings {
   #[allow(dead_code)]
   source: WeakSourceRef,
@@ -52,6 +57,7 @@ pub struct EkbSettings {
 }
 
 impl EkbSettings {
+  /// Write user changes to the bot-account to the config draft
   pub fn update_bot_account(&mut self, try_value: Cow<'_,str>) {
     let value = validate_twitch_name(try_value.clone());
     if value.is_none() {
@@ -63,6 +69,7 @@ impl EkbSettings {
       log::error!("Failed to lock config_draft.")
     }
   }
+  /// Write user changes to the channel to the config draft
   pub fn update_channel(&mut self, try_value: Cow<'_,str>) {
     let value = validate_twitch_name(try_value.clone());
     if value.is_none() {

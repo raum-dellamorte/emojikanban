@@ -473,6 +473,16 @@ fn alpha_over(destination: &mut Rgba<u8>, source: Rgba<u8>) {
   destination[3] = (output_alpha * 255.0).round() as u8;
 }
 
+pub struct ColorConverter<T>(pub Option<T>);
+
+impl From<Option<twitch_message::Color>> for ColorConverter<Color> {
+  fn from(value: Option<twitch_message::Color>) -> Self {
+    if let Some(c) = value {
+      ColorConverter(Some(Color::rgb(c.0, c.1, c.2)))
+    } else { ColorConverter(None) }
+  }
+}
+
 // const EMOTE_PLACEHOLDER: &str = "\u{2003}";
 const EMOTE_MARKER: &str = "\u{FFFC}";
 const EMOTE_BREAK: &str = "\u{200B}";

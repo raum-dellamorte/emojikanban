@@ -1,25 +1,19 @@
 use {
   crate::{
     config_kdl::*,
+    font_studio::ColorConverter,
     plugin::*,
-    // TwitchOAuthRcvr::*,
   },
-  anyhow::{
-    Result,
-    anyhow,
-  },
+  anyhow::{ Result, anyhow, },
   cosmic_text::Color,
   futures::StreamExt,
   irc::client::prelude::*,
   kdl::{
-    KdlDocument,
-    KdlError,
+    KdlDocument, KdlError,
   },
   obs_wrapper::{
     module::{
-      LoadContext,
-      Module,
-      ModuleRef,
+      LoadContext, Module, ModuleRef,
     },
     obs_register_module,
     obs_string,
@@ -28,7 +22,7 @@ use {
       obs_frontend_open_source_properties,
       obs_source_create_private,
     },
-    source::SourceRef,
+    source::{ Icon, SourceRef, },
     string::ObsString,
     wrapper::PtrWrapper,
   },
@@ -44,7 +38,7 @@ use {
     },
     path::PathBuf,
     sync::{
-      Arc, /*Mutex,*/ OnceLock,
+      Arc, OnceLock,
     },
   },
   tokio::{
@@ -59,8 +53,7 @@ use {
   twitch_api::{
     helix::HelixClient, 
     twitch_oauth2::{
-      AccessToken, 
-      UserToken, 
+      AccessToken, UserToken, 
     },
   },
 };
@@ -86,7 +79,11 @@ pub struct EkbBroadcast {
   pub cfg_rx: watch::Receiver<Option<EkbConfigSnapshot>>,
 }
 
-struct EKBModule {
+struct ToolsMenuState {
+  settings_source: SourceRef,
+}
+
+struct EkbModule {
   ctx: ModuleRef,
   runtime: Option<Runtime>,
   twitch_mgr_handle: Option<JoinHandle<()>>,
@@ -94,7 +91,7 @@ struct EKBModule {
   tools_menu_state: Option<Box<ToolsMenuState>>,
 }
 
-impl Drop for EKBModule {
+impl Drop for EkbModule {
   fn drop(&mut self) {
     if let Some(runtime) = self.runtime.take() {
       runtime.shutdown_timeout(std::time::Duration::from_millis(100));
@@ -102,7 +99,7 @@ impl Drop for EKBModule {
   }
 }
 
-impl Module for EKBModule {
+impl Module for EkbModule {
   fn new(ctx: ModuleRef) -> Self {
     // Start the logger
     let _ = obs_wrapper::log::Logger::new().with_promote_debug(PROMOTE_DEBUG_LOGS).init();
@@ -172,6 +169,7 @@ impl Module for EKBModule {
       .enable_update()
       .enable_video_render()
       .enable_video_tick()
+      .with_icon(Icon::Slideshow)
       .build();
     load_context.register_source(emojikanban_info);
     let chatto_source = load_context
@@ -184,6 +182,7 @@ impl Module for EKBModule {
       .enable_update()
       .enable_video_render()
       .enable_video_tick()
+      .with_icon(Icon::Text)
       .build();
     load_context.register_source(chatto_source);
     true
@@ -209,12 +208,14 @@ impl Module for EKBModule {
   }
 }
 
-obs_register_module!(EKBModule);
+obs_register_module!(EkbModule);
 
-struct ToolsMenuState {
-  settings_source: SourceRef,
-}
-
+/// Callback for OBS Tools menu entry.
+/// 
+/// Assumes `private_data` is a ToolsMenuState with an internal
+/// Source pointer, `settings_source`. Clicking the menu entry
+/// opens the Properties dialog of that Source. EmojiKanBan uses
+/// a dummy Source for Twitch connection settings.
 unsafe extern "C" fn open_ekb_config(private_data: *mut c_void) {
   if private_data.is_null() {
     log::error!("EmojiKanBan Tools Menu callback received null data.");
@@ -270,21 +271,18 @@ pub async fn twitch_connection_mgr(
           Ok(Ok(())) => {
             log::warn!("Twitch monitor stopped");
           }
-          Ok(Err(error)) => {
-            log::error!("Twitch monitor failed: {}", error);
+          Ok(Err(e)) => {
+            log::error!("Twitch monitor failed: {}", e);
           }
-          Err(error) => {
-            log::error!(
-              "Twitch monitor task failed: {}",
-              error,
-            );
+          Err(e) => {
+            log::error!("Twitch monitor task failed: {}", e);
           }
         }
         // reconnect delay
         tokio::select!{
           biased;
-          command = cmd_rx.recv() => {
-            match command {
+          cmd = cmd_rx.recv() => {
+            match cmd {
               Some(TwitchMgrCmd::UpdateConfig(update)) => {
                 config_update = update;
               }
@@ -296,9 +294,7 @@ pub async fn twitch_connection_mgr(
               }
             }
           }
-          _ = tokio::time::sleep(
-            std::time::Duration::from_secs(5),
-          ) => {
+          _ = tokio::time::sleep(std::time::Duration::from_secs(5),) => {
             config_update = EkbConfigUpdate::default();
           }
         }
@@ -342,8 +338,9 @@ pub async fn start_twitch_monitor(mut ekb_conf_dirs: EkbConfigDirs, conf: EkbTwi
       return Err(anyhow!("Twitch IRC stream ended"));
     }
     match irc_response.unwrap().to_twitch_message_privmsg() {
-      Err(_msg) => {
-        // Do something with this?
+      Err(e) => {
+        // KeepAlive stuff will be here, like PING and PONG. No need to get excited.
+        log::info!("irc_response other than TwitchMessage::Privmsg: {}", e);
       }
       Ok(pm) => {
         let user: String = pm.display_name().unwrap_or("Anonymous").to_owned();
@@ -363,7 +360,7 @@ pub async fn start_twitch_monitor(mut ekb_conf_dirs: EkbConfigDirs, conf: EkbTwi
                 loc: emote.byte_pos,
               })
             })
-          {
+          { // if let Ok(emote_data) = emotes.query_one(...)
             log::info!("Loaded emote id {} from sqlite", emote.id);
             emote_data
           } else {
@@ -384,7 +381,7 @@ pub async fn start_twitch_monitor(mut ekb_conf_dirs: EkbConfigDirs, conf: EkbTwi
             }
             let emote_data = EmoteData{
               id: emote.id.to_string(),
-              name: emote.name.into_owned(), // FixMe: this sometimes ends up with several names, probably when multiple emotes are used in the same chat
+              name: emote.name.into_owned(),
               img: img_bytes.into(),
               loc: emote.byte_pos,
             };
@@ -397,7 +394,6 @@ pub async fn start_twitch_monitor(mut ekb_conf_dirs: EkbConfigDirs, conf: EkbTwi
             log::info!("Loaded emote id {} from URI", emote.id);
             emote_data
           };
-          // let _ = tx.send(EmoteComEnum::Data(emote_data));
           chat_data.emotes.push(emote_data);
         }
         chat_data.emotes.sort_by_key(|e| e.loc.0 );
@@ -606,14 +602,4 @@ pub enum TwitchMgrCmd {
   UpdateConfig(EkbConfigUpdate),
   Reconnect,
   Shutdown,
-}
-
-pub struct ColorConverter<T>(Option<T>);
-
-impl From<Option<twitch_message::Color>> for ColorConverter<Color> {
-  fn from(value: Option<twitch_message::Color>) -> Self {
-    if let Some(c) = value {
-      ColorConverter(Some(Color::rgb(c.0, c.1, c.2)))
-    } else { ColorConverter(None) }
-  }
 }
