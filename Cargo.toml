@@ -27,7 +27,6 @@ nom = "8.0.0"
 obs-wrapper = { git = "https://github.com/raum-dellamorte/rust-obs-wrapper.git", branch = "compat_32.0.4" } # "0.4.1" #
 # obs-wrapper = { path = "../rust-obs-wrapper" } # "0.4.1" #
 open = "5.4.1"
-openssl = { version = "0.10.81", features = ["vendored"] }
 platform-dirs = "0.3.0"
 rand = "0.10.0"
 rand_distr = "0.6.0"
@@ -36,3 +35,7 @@ rusqlite = { version = "0.38.0", features = ["bundled"] }
 tokio = { version = "1.49.0", features = ["rt", "rt-multi-thread", "macros", "net", "time"] }
 twitch_api = { version = "0.7.2", features = ["helix", "reqwest"] }
 twitch_message = "0.1.2"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+openssl = { version = "0.10.81", features = ["vendored"] }
+
