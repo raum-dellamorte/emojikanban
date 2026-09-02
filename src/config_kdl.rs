@@ -201,8 +201,7 @@ pub const CALLBACK_PAGE: &str = r#"<!doctype html>
 </html>
 "#;
 
-pub fn serve_oauth_receiver() -> Result<String, anyhow::Error> {
-  let listener = TcpListener::bind("127.0.0.1:3000")?;
+pub fn serve_oauth_receiver(listener: TcpListener) -> Result<String, anyhow::Error> {
   for stream in listener.incoming() {
     let mut stream = stream?;
     let request = oauth_rcvr_read_request(&mut stream)?;

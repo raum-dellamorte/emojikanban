@@ -121,19 +121,28 @@ impl GetPropertiesSource for EkbSettings {
       true,
       move || {
         log::info!("EmojiKanBan attempting to (re)authenticate Twitch for access to chat. Server starting on http://localhost:3000/");
-        std::thread::spawn({
-          match open::that(TWITCH_CALLBACK_URL) {
-            Ok(()) => {}
-            Err(e) => { log::error!("Failed to open http://localhost:3000/ to acquire a Twitch OAuth Token. Please navigate manually to that address.\nError: {}", e) }
+        let cmd_tx = cmd_tx.clone();
+        std::thread::spawn(move || {
+          let listener = match std::net::TcpListener::bind("127.0.0.1:3000") {
+            Ok(listener) => listener,
+            Err(e) => {
+              log::error!("Failed to start OAuth server: {}", e);
+              return;
+            }
+          };
+          if let Err(e) = open::that(TWITCH_CALLBACK_URL) {
+            log::error!("Failed to open {}. Error: {}", TWITCH_CALLBACK_URL, e);
           }
-          let cmd_tx = cmd_tx.clone();
-          move || { match serve_oauth_receiver() {
+          match serve_oauth_receiver(listener) {
             Ok(oauth) => {
-              _ = cmd_tx.send(TwitchMgrCmd::UpdateConfig(
+              if let Err(e) = cmd_tx.send(TwitchMgrCmd::UpdateConfig(
                 EkbConfigUpdate { oauth: Some(oauth), ..Default::default() }
-              )); }
+              )) {
+                log::error!("Failed to send OAuth update to the connection manager: {}", e)
+              }
+            }
             Err(e) => { log::error!("serve_oauth_receiver failure: {}", e); }
-          }}
+          };
         });
       },
     );

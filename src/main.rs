@@ -20,7 +20,11 @@ fn main() -> Result<(), anyhow::Error> {
   std::io::stdin().read_line(&mut answer)?;
   let config_update: EkbConfigUpdate = if answer.trim().eq_ignore_ascii_case("y") {
     println!("Open this URL in your browser:\n{TWITCH_AUTH_URL}");
-    let access_token = serve_oauth_receiver()?;
+    let listener = std::net::TcpListener::bind("127.0.0.1:3000")?;
+    if let Err(e) = open::that(TWITCH_CALLBACK_URL) {
+      log::error!("Failed to open {}. Error: {}", TWITCH_CALLBACK_URL, e);
+    }
+    let access_token = serve_oauth_receiver(listener)?;
     println!("Twitch access token: {access_token}");
     EkbConfigUpdate {
       oauth: Some(access_token),
