@@ -1,13 +1,13 @@
 use {
   crate::{
-    ChatData, /*EmoteComEnum,*/ EmoteData,
+    ChatData, EmoteData, TwitchMgrCmd,
     config_kdl::{
       EkbConfigDirs, EkbConfigUpdate, EkbTwitchConfig,
       TWITCH_CALLBACK_URL,
       serve_oauth_receiver, validate_twitch_name,
     },
     effects::*,
-    // ekb_broadcast,
+    ekb_broadcast,
     font_studio::*,
     // plugin::{
     //   TwitchConnectionStatus::*, // TwitchOAuthRcvr::*,
@@ -36,7 +36,7 @@ use {
   std::{
     borrow::Cow,
     collections::VecDeque,
-    ops::Deref,
+    // ops::Deref,
     sync::{
       Arc, Mutex,
     },
@@ -46,171 +46,36 @@ use {
     sync::{
       broadcast,
       mpsc::{
-        UnboundedReceiver, UnboundedSender,
+        // UnboundedReceiver,
+        UnboundedSender,
       },
     },
-    task::JoinHandle,
+    // task::JoinHandle,
   }, 
 };
 
 pub struct EkbSettings {
   #[allow(dead_code)]
   source: WeakSourceRef,
-  // runtime: Handle,
-  need_oauth_update: Arc<Mutex<bool>>,
-  need_config_file_update: Arc<Mutex<bool>>,
-  // config_data: Option<(EkbConfigDirs, EkbTwitchConfig)>,
-  config_draft: EkbConfigUpdate,
-  config_handle: Option<JoinHandle<()>>,
-  twitch_handle: Option<JoinHandle<()>>,
-  // twitch_status: TwitchConnectionStatus,
-  oauth_tx: Option<UnboundedSender<TwitchOAuthRcvr>>,
-  oauth_rx: Option<UnboundedReceiver<TwitchOAuthRcvr>>,
-}
-
-impl Drop for EkbSettings {
-  fn drop(&mut self) {
-    if let Some(handle) = self.config_handle.take() {
-      handle.abort();
-    }
-    if let Some(handle) = self.twitch_handle.take() {
-      handle.abort();
-    }
-    self.oauth_rx.take();
-    self.oauth_tx.take();
-    // self._emote_rx.take();
-  }
+  cmd_tx: UnboundedSender<TwitchMgrCmd>,
+  config_draft: Arc<Mutex<EkbConfigUpdate>>,
 }
 
 impl EkbSettings {
-  pub fn check_twitch_connection(&mut self) {
-    if self.need_config_file_update() {
-      self.disable_config_file_update();
-      let update = std::mem::take(&mut self.config_draft);
-      if update.bot_account.is_some() || update.channel.is_some() {
-        // if let Err(update) = self.start_config_thread(update) {
-        //   self.config_draft = update;
-        // };
-        return;
-      }
-      log::info!("Config File Update requested but there are no valid changes.");
-    }
-    // let need_oauth_update = self.need_oauth_update();
-    // use TwitchConnectionStatus::*;
-    // match self.twitch_status {
-    //   InitConnection => {
-    //     if self.oauth_tx.is_some() && self.oauth_rx.is_some() { // We have a runtime and now need to set up the Twitch connection
-    //       if need_oauth_update {
-    //         self.twitch_status = AwaitingConfig;
-    //       } else {
-    //         if let Err(_) = self.start_config_thread(EkbConfigUpdate::default()) {
-    //           log::error!("start_config_thread failed with default values.");
-    //         };
-    //       } 
-    //     } else { // We are not connected to Twitch and need to establish the runtime
-    //       let (oauth_tx, oauth_rx) = tokio::sync::mpsc::unbounded_channel();
-    //       self.oauth_tx = Some(oauth_tx);
-    //       self.oauth_rx = Some(oauth_rx);
-    //       self.check_twitch_connection(); // Try again with the runtime now available.
-    //     }
-    //   }
-    //   AwaitingConfig => {
-    //     if self.oauth_rx.is_some() {
-    //       while let Ok(res) = self.oauth_rx.as_mut().unwrap().try_recv() { match res {
-    //         OAuthToken(oauth) => {
-    //           let oauth = { if need_oauth_update {
-    //             EkbConfigUpdate {
-    //               oauth: Some(oauth.to_owned()),
-    //               ..Default::default()
-    //             } 
-    //           } else { EkbConfigUpdate::default() } };
-    //           self.disable_oauth_update();
-    //           if let Err(_) = self.start_config_thread(oauth) {
-    //             log::error!("start_config_thread failed with new oauth data.")
-    //           };
-    //         }
-    //         NewConfigData(data) => {
-    //           if let Some(mut source) = self.source.upgrade() {
-    //             let bot_account: ObsString = data.1.bot_account().into();
-    //             let channel: ObsString = data.1.channel().into();
-    //             {
-    //               let mut settings = source.get_settings();
-    //               settings.set_string(obs_string!("twitch_bot_account"), bot_account);
-    //               settings.set_string("twitch_channel", channel);
-    //             }
-    //             source.update_source_properties();
-    //           }
-    //           self.config_data = Some(data);
-    //         }
-    //         RcvrError(e) => {
-    //           log::error!("{}", e);
-    //         }
-    //       }}
-    //     }
-    //     if let Some((ekb_config_dirs, conf)) = self.config_data.take() {
-    //       if let Some(handle) = self.twitch_handle.take() {
-    //         handle.abort();
-    //       }
-    //       self.twitch_handle = Some(self.runtime.spawn(async move {
-    //         let _ = start_twitch_monitor(ekb_config_dirs, conf).await;
-    //       }));
-    //       self.twitch_status = Connected;
-    //     }
-    //   }
-    //   Connected => {
-    //     if need_oauth_update {
-    //       self.twitch_status = AwaitingConfig;
-    //     }
-    //   }
-    // }
-  }
-  // fn start_config_thread(&mut self, ekb: EkbConfigUpdate) -> Result<(),EkbConfigUpdate> {
-  //   if let Some(tx) = self.oauth_tx.as_ref() {
-  //     let tx = tx.clone();
-  //     if let Some(handle) = self.config_handle.take() {
-  //       handle.abort();
-  //     }
-  //     self.config_handle = Some(self.runtime.spawn(async move {
-  //       crate::get_or_create_config_emojikanban(ekb, tx).await;
-  //     }));
-  //     // self.twitch_status = AwaitingConfig;
-  //     Ok(())
-  //   } else {
-  //     log::error!("Unexpected Error: start_config_thread expected self.oauth_tx to be Some(tx), which should have been created at the same time as self.runtime.");
-  //     return Err(ekb);
-  //   }
-  // }
-  // pub fn update_config_from_draft() {}
   pub fn update_bot_account(&mut self, value: Cow<'_,str>) {
     let value = validate_twitch_name(value);
-    if value.is_some() {
-      self.config_draft.bot_account = value;
+    if value.is_some() && let Ok(mut draft) = self.config_draft.lock() {
+      draft.bot_account = value;
+    } else {
+      log::error!("Failed to lock config_draft.")
     }
   }
   pub fn update_channel(&mut self, value: Cow<'_,str>) {
     let value = validate_twitch_name(value);
-    if value.is_some() {
-      self.config_draft.channel = value;
-    }
-  }
-  pub fn need_oauth_update(&self) -> bool {
-    if let Ok(lock) = self.need_oauth_update.lock() {
-      return lock.deref().clone();
-    } else { false }
-  }
-  pub fn disable_oauth_update(&mut self) {
-    if let Ok(mut update) = self.need_oauth_update.lock() {
-      *update = false;
-    }
-  }
-  pub fn need_config_file_update(&self) -> bool {
-    if let Ok(lock) = self.need_config_file_update.lock() {
-      return lock.deref().clone();
-    } else { false }
-  }
-  pub fn disable_config_file_update(&mut self) {
-    if let Ok(mut update) = self.need_config_file_update.lock() {
-      *update = false;
+    if value.is_some() && let Ok(mut draft) = self.config_draft.lock() {
+      draft.channel = value; // fixme!
+    } else {
+      log::error!("Failed to lock config_draft.")
     }
   }
 } // impl EkbSettings
@@ -227,21 +92,11 @@ impl Sourceable for EkbSettings {
     let settings = &mut create.settings;
     
     source.update_source_settings(settings);
-    let mut ekb_settings = Self {
+    Self {
       source: source.downgrade(),
-      // runtime: ekb_broadcast().runtime.clone(),
-      need_oauth_update: Arc::new(Mutex::new(false)),
-      need_config_file_update: Arc::new(Mutex::new(false)),
-      // config_data: None,
-      config_draft: EkbConfigUpdate::default(),
-      config_handle: None,
-      twitch_handle: None,
-      // twitch_status: InitConnection,
-      oauth_tx: None,
-      oauth_rx: None,
-    };
-    ekb_settings.check_twitch_connection();
-    ekb_settings
+      cmd_tx: ekb_broadcast().cmd_tx.clone(),
+      config_draft: Arc::new(Mutex::new(EkbConfigUpdate::default())),
+    }
   }
 }
 
@@ -254,43 +109,57 @@ impl GetNameSource for EkbSettings {
 impl GetPropertiesSource for EkbSettings {
   fn get_properties(&mut self) -> Properties {
     let mut props = Properties::new();
-    // let broadcast = ekb_broadcast();
-    if let Some(ref tx) = self.oauth_tx {
-      let oauth_tx = tx.clone();
-      let update_oauth = self.need_oauth_update.clone();
-      props.add_button_with_refresh(
-        "twitch_authenticate".into(),
-        "Request New Twitch OAuth Token And Connect".into(),
-        true,
-        move || {
-          log::info!("EmojiKanBan attempting to (re)authenticate Twitch for access to chat. Server starting on http://localhost:3000/");
-          std::thread::spawn({
-            match open::that(TWITCH_CALLBACK_URL) {
-              Ok(()) => {}
-              Err(e) => { log::error!("Failed to open http://localhost:3000/ to acquire a Twitch OAuth Token. Please navigate manually to that address.\nError: {}", e) }
-            }
-            if let Ok(mut update_oauth) = update_oauth.lock() {
-              *update_oauth = true;
-            }
-            let oauth_tx = oauth_tx.clone();
-            move || { match serve_oauth_receiver() {
-              Ok(oauth) => { _ = oauth_tx.send(TwitchOAuthRcvr::OAuthToken(oauth)); }
-              Err(e) => { _ = oauth_tx.send(TwitchOAuthRcvr::RcvrError(e.into())); }
-            }}
-          });
-        },
-      );
-    };
+    let cmd_tx = self.cmd_tx.clone();
+    props.add_button_with_refresh(
+      "twitch_authenticate".into(),
+      "Request New Twitch OAuth Token And Connect".into(),
+      true,
+      move || {
+        log::info!("EmojiKanBan attempting to (re)authenticate Twitch for access to chat. Server starting on http://localhost:3000/");
+        std::thread::spawn({
+          match open::that(TWITCH_CALLBACK_URL) {
+            Ok(()) => {}
+            Err(e) => { log::error!("Failed to open http://localhost:3000/ to acquire a Twitch OAuth Token. Please navigate manually to that address.\nError: {}", e) }
+          }
+          let cmd_tx = cmd_tx.clone();
+          move || { match serve_oauth_receiver() {
+            Ok(oauth) => {
+              _ = cmd_tx.send(TwitchMgrCmd::UpdateConfig(
+                EkbConfigUpdate { oauth: Some(oauth), ..Default::default() }
+              )); }
+            Err(e) => { log::error!("serve_oauth_receiver failure: {}", e); }
+          }}
+        });
+      },
+    );
     {
-      let update_config_file = self.need_config_file_update.clone();
+      let config_draft = self.config_draft.clone();
+      let cmd_tx = self.cmd_tx.clone();
       props.add_button_with_refresh(
         "twitch_config_update".into(),
         "Apply Below Bot Account and Channel Values To Config".into(),
         true,
         move || {
           log::info!("EmojiKanBan updating config.kdl with new bot-account/channel values.");
-          if let Ok(mut update) = update_config_file.lock() {
-            *update = true;
+          let update = match config_draft.lock() {
+            Ok(mut draft) => std::mem::take(&mut *draft),
+            Err(e) => {
+              log::error!("Failed to lock config_draft: {}", e);
+              return;
+            }
+          };
+          if update.bot_account.is_none() && update.channel.is_none() && update.oauth.is_none() {
+            log::info!("No valid config changes to apply.");
+            return;
+          }
+          if let Err(e) = cmd_tx.send(TwitchMgrCmd::UpdateConfig(update)) {
+            let TwitchMgrCmd::UpdateConfig(ref update) = e.0 else {
+              return;
+            };
+            if let Ok(mut draft) = config_draft.lock() {
+              *draft = update.clone();
+            }
+            log::error!("Failed to send config file update: {}", e)
           }
         },
       );
