@@ -105,11 +105,20 @@ impl GetNameSource for EkbSettings {
 
 impl GetPropertiesSource for EkbSettings {
   fn get_properties(&mut self) -> Properties {
-    let snapshot = self.cfg_rx.borrow_and_update().clone();
-    if let Some(snapshot) = snapshot && let Some(source) = self.source.upgrade() {
-      let mut settings = source.get_settings();
-      settings.set_string("twitch_bot_account", snapshot.bot_account);
-      settings.set_string("twitch_channel", snapshot.channel);
+    let config_changed = match self.cfg_rx.has_changed() {
+      Ok(changed) => changed,
+      Err(e) => {
+        log::error!("Config snapshot channel closed: {}", e);
+        false
+      }
+    };
+    if config_changed {
+      let snapshot = self.cfg_rx.borrow_and_update().clone();
+      if let Some(snapshot) = snapshot && let Some(source) = self.source.upgrade() {
+        let mut settings = source.get_settings();
+        settings.set_string("twitch_bot_account", snapshot.bot_account);
+        settings.set_string("twitch_channel", snapshot.channel);
+      }
     }
     let mut props = Properties::new();
     let cmd_tx = self.cmd_tx.clone();
