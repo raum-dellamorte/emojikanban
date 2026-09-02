@@ -30,8 +30,8 @@ pub struct FontStudio {
   attrs: AttrsOwned,
   pub text_blocks: VecDeque<TextBlock>,
   pub chat_blocks: VecDeque<ChatMsgBlock>,
-  screen_w: f32,
-  screen_h: f32,
+  chat_w: f32,
+  chat_h: f32,
   user_metrics: (f32,f32),
   chat_bg_tex: Option<GraphicsTexture>,
   chat_life: f32,
@@ -57,19 +57,21 @@ impl FontStudio {
       attrs,
       text_blocks: VecDeque::new(),
       chat_blocks: VecDeque::new(),
-      screen_w: 1920.0, // probably fixme
-      screen_h: 1080.0,
+      chat_w: 300.0,
+      chat_h: 700.0,
       user_metrics: (26.0, 30.0),
       chat_bg_tex,
       chat_life: 120.0,
-      chat_offset: (1620,0),
+      chat_offset: (0,0),
       chat_metrics: (30.0,34.0),
       chat_margin: 10,
       chat_width: 300,
     }
   }
-  pub fn update_dimensions(&mut self, w: f32, h: f32) {
-    (self.screen_w, self.screen_h) = (w, h);
+  pub fn update_dimensions(&mut self, w: u32, h: u32) {
+    (self.chat_w, self.chat_h) = (w as f32, h as f32);
+    let cbg_img = create_chat_bg(w,h,20.0,[10,50,10,179]);
+    self.chat_bg_tex = Some(gen_rgba_tex(cbg_img));
   }
   pub fn update(&mut self, seconds: f32) {
     self.text_blocks.retain(|tblk| tblk.is_alive() );

@@ -414,10 +414,10 @@ pub struct ChattoKanBan {
   chat_rx: broadcast::Receiver<Arc<ChatData>>,
   font_studio: FontStudio,
   // rng: ThreadRng,
-  screen_w: u32,
-  screen_h: u32,
-  screen_offset_x: u32,
-  screen_offset_y: u32,
+  chat_w: u32,
+  chat_h: u32,
+  // screen_offset_x: u32,
+  // screen_offset_y: u32,
 }
 
 impl Sourceable for ChattoKanBan {
@@ -431,10 +431,10 @@ impl Sourceable for ChattoKanBan {
     log::info!("Creating ChattoKanBan Context");
     let chat_rx = ekb_broadcast().chat_tx.subscribe();
     let settings = &mut create.settings;
-    let screen_w = settings.get(obs_string!("screen_width")).unwrap_or(1920);
-    let screen_h = settings.get(obs_string!("screen_height")).unwrap_or(1080);
-    let screen_offset_x = settings.get(obs_string!("offset_x")).unwrap_or(0);
-    let screen_offset_y = settings.get(obs_string!("offset_y")).unwrap_or(0);
+    let chat_w = settings.get(obs_string!("chat_width")).unwrap_or(300);
+    let chat_h = settings.get(obs_string!("chat_height")).unwrap_or(700);
+    // let screen_offset_x = settings.get(obs_string!("offset_x")).unwrap_or(0);
+    // let screen_offset_y = settings.get(obs_string!("offset_y")).unwrap_or(0);
     let font_studio = FontStudio::new();
     source.update_source_settings(settings);
     Self {
@@ -442,10 +442,10 @@ impl Sourceable for ChattoKanBan {
       chat_rx,
       font_studio,
       // rng: rand::rng(),
-      screen_w,
-      screen_h,
-      screen_offset_x,
-      screen_offset_y,
+      chat_w,
+      chat_h,
+      // screen_offset_x,
+      // screen_offset_y,
     }
   }
 }
@@ -458,13 +458,13 @@ impl GetNameSource for ChattoKanBan {
 
 impl GetWidthSource for ChattoKanBan {
   fn get_width(&mut self) -> u32 {
-    self.screen_w
+    self.chat_w
   }
 }
 
 impl GetHeightSource for ChattoKanBan {
   fn get_height(&mut self) -> u32 {
-    self.screen_h
+    self.chat_h
   }
 }
 
@@ -473,25 +473,26 @@ impl GetPropertiesSource for ChattoKanBan {
     let mut props = Properties::new();
     props
       .add(
-        obs_string!("screen_width"),
-        obs_string!("Screen width"),
-        NumberProp::new_int().with_range(1u32..=3840 * 3),
+        obs_string!("chat_width"),
+        obs_string!("Chat Width"),
+        NumberProp::new_int().with_range(150u32..=3840),
       )
       .add(
-        obs_string!("screen_height"),
-        obs_string!("Screen height"),
-        NumberProp::new_int().with_range(1u32..=3840 * 3),
+        obs_string!("chat_height"),
+        obs_string!("Chat Height"),
+        NumberProp::new_int().with_range(150u32..=2160),
       )
-      .add(
-        obs_string!("offset_x"),
-        obs_string!("Offset relative to the top left screen corner. X Offset:"),
-        NumberProp::new_int().with_range(1u32..=3840 * 3),
-      )
-      .add(
-        obs_string!("offset_y"),
-        obs_string!("Offset relative to the top left screen corner. Y Offset:"),
-        NumberProp::new_int().with_range(1u32..=3840 * 3),
-      );
+      // .add(
+      //   obs_string!("offset_x"),
+      //   obs_string!("Offset relative to the top left screen corner. X Offset:"),
+      //   NumberProp::new_int().with_range(1u32..=3840 * 3),
+      // )
+      // .add(
+      //   obs_string!("offset_y"),
+      //   obs_string!("Offset relative to the top left screen corner. Y Offset:"),
+      //   NumberProp::new_int().with_range(1u32..=3840 * 3),
+      // )
+    ;
     props
   }
 }
@@ -499,18 +500,20 @@ impl GetPropertiesSource for ChattoKanBan {
 impl UpdateSource for ChattoKanBan {
   fn update(&mut self, settings: &mut DataObj, _context: &mut GlobalContext) {
     let data = self;
-    if let Some(screen_width) = settings.get(obs_string!("screen_width")) {
-      data.screen_w = screen_width;
+    let chat_w = settings.get(obs_string!("chat_width")).unwrap_or(300); 
+    let chat_h = settings.get(obs_string!("chat_height")).unwrap_or(700);
+    if data.chat_w != chat_w || data.chat_h != chat_h {
+      data.chat_w = chat_w;
+      data.chat_h = chat_h;
+      data.font_studio.update_dimensions(data.chat_w, data.chat_h);
+      // data.chat_layout_rebuild()
     }
-    if let Some(screen_height) = settings.get(obs_string!("screen_height")) {
-      data.screen_h = screen_height;
-    }
-    if let Some(offset_x) = settings.get(obs_string!("offset_x")) {
-      data.screen_offset_x = offset_x;
-    }
-    if let Some(offset_y) = settings.get(obs_string!("offset_y")) {
-      data.screen_offset_y = offset_y;
-    }
+    // if let Some(offset_x) = settings.get(obs_string!("offset_x")) {
+    //   data.screen_offset_x = offset_x;
+    // }
+    // if let Some(offset_y) = settings.get(obs_string!("offset_y")) {
+    //   data.screen_offset_y = offset_y;
+    // }
   }
 }
 
