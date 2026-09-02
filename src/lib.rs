@@ -52,7 +52,7 @@ use {
       Handle, Runtime,
     },
     sync::{
-      broadcast, mpsc,
+      broadcast, mpsc, watch,
     },
     task::JoinHandle,
   },
@@ -83,6 +83,7 @@ pub struct EkbBroadcast {
   pub runtime: Handle,
   pub chat_tx: broadcast::Sender<Arc<ChatData>>,
   pub cmd_tx: mpsc::UnboundedSender<TwitchMgrCmd>,
+  pub cfg_rx: watch::Receiver<Option<EkbConfigSnapshot>>,
 }
 
 struct EKBModule {
@@ -109,12 +110,16 @@ impl Module for EKBModule {
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let (chat_tx, _) = broadcast::channel::<Arc<ChatData>>(256);
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
-    let twitch_mgr_handle = Some(runtime.spawn(twitch_connection_mgr(cmd_rx, chat_tx.clone())));
+    let (cfg_tx, cfg_rx) = watch::channel::<Option<EkbConfigSnapshot>>(None);
+    let twitch_mgr_handle = Some(runtime.spawn(twitch_connection_mgr(
+      cmd_rx, chat_tx.clone(), cfg_tx,
+    )));
     EKB_BROADCAST.set(
       EkbBroadcast {
         runtime: runtime.handle().clone(),
         chat_tx,
         cmd_tx,
+        cfg_rx,
       }
     ).unwrap();
     let runtime = Some(runtime);
@@ -230,6 +235,7 @@ unsafe extern "C" fn open_ekb_config(private_data: *mut c_void) {
 pub async fn twitch_connection_mgr(
   mut cmd_rx: mpsc::UnboundedReceiver<TwitchMgrCmd>,
   chat_tx: broadcast::Sender<Arc<ChatData>>,
+  cfg_tx: watch::Sender<Option<EkbConfigSnapshot>>,
 ) {
   let mut config_update = EkbConfigUpdate::default();
   loop {
@@ -253,6 +259,7 @@ pub async fn twitch_connection_mgr(
         }
       }
     };
+    cfg_tx.send_replace(Some(EkbConfigSnapshot::from(&config)));
     let mut monitor = tokio::spawn(
       start_twitch_monitor(config_dirs, config, chat_tx.clone(), )
     );

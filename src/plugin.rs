@@ -2,7 +2,7 @@ use {
   crate::{
     ChatData, EmoteData, TwitchMgrCmd,
     config_kdl::{
-      EkbConfigDirs, EkbConfigUpdate, EkbTwitchConfig,
+      EkbConfigDirs, EkbConfigSnapshot, EkbConfigUpdate, EkbTwitchConfig,
       TWITCH_CALLBACK_URL,
       serve_oauth_receiver, validate_twitch_name,
     },
@@ -44,11 +44,7 @@ use {
   tokio::{
     runtime::Handle,
     sync::{
-      broadcast,
-      mpsc::{
-        // UnboundedReceiver,
-        UnboundedSender,
-      },
+      broadcast, mpsc, watch,
     },
     // task::JoinHandle,
   }, 
@@ -57,7 +53,8 @@ use {
 pub struct EkbSettings {
   #[allow(dead_code)]
   source: WeakSourceRef,
-  cmd_tx: UnboundedSender<TwitchMgrCmd>,
+  cmd_tx: mpsc::UnboundedSender<TwitchMgrCmd>,
+  cfg_rx: watch::Receiver<Option<EkbConfigSnapshot>>,
   config_draft: Arc<Mutex<EkbConfigUpdate>>,
 }
 
@@ -97,9 +94,11 @@ impl Sourceable for EkbSettings {
   fn create(create: &mut CreatableSourceContext<Self>, mut source: SourceRef) -> Self {
     let settings = &mut create.settings;
     source.update_source_settings(settings);
+    let ekb = ekb_broadcast();
     Self {
       source: source.downgrade(),
-      cmd_tx: ekb_broadcast().cmd_tx.clone(),
+      cmd_tx: ekb.cmd_tx.clone(),
+      cfg_rx: ekb.cfg_rx.clone(),
       config_draft: Arc::new(Mutex::new(EkbConfigUpdate::default())),
     }
   }
@@ -113,6 +112,12 @@ impl GetNameSource for EkbSettings {
 
 impl GetPropertiesSource for EkbSettings {
   fn get_properties(&mut self) -> Properties {
+    let snapshot = self.cfg_rx.borrow().clone();
+    if let Some(snapshot) = snapshot && let Some(source) = self.source.upgrade() {
+      let mut settings = source.get_settings();
+      settings.set_string("twitch_bot_account", snapshot.bot_account);
+      settings.set_string("twitch_channel", snapshot.channel);
+    }
     let mut props = Properties::new();
     let cmd_tx = self.cmd_tx.clone();
     props.add_button_with_refresh(

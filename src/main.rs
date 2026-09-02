@@ -47,12 +47,14 @@ fn main() -> Result<(), anyhow::Error> {
   };
   let (chat_tx, mut rx) = tokio::sync::broadcast::channel::<std::sync::Arc<emojikanban::ChatData>>(256);
   let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
-  let _twitch_mgr_handle = Some(runtime.spawn(emojikanban::twitch_connection_mgr(cmd_rx, chat_tx.clone())));
+  let (cfg_tx, cfg_rx) = tokio::sync::watch::channel::<Option<EkbConfigSnapshot>>(None);
+  let _twitch_mgr_handle = Some(runtime.spawn(emojikanban::twitch_connection_mgr(cmd_rx, chat_tx.clone(), cfg_tx)));
   emojikanban::EKB_BROADCAST.set(
     emojikanban::EkbBroadcast {
       runtime: runtime.handle().clone(),
       chat_tx: chat_tx.clone(),
       cmd_tx,
+      cfg_rx,
     }
   ).unwrap();
   runtime.spawn(async move {

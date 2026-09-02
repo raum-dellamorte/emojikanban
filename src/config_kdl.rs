@@ -19,6 +19,20 @@ pub struct EkbConfigUpdate {
   pub channel: Option<String>,
 }
 
+#[derive(Clone,Debug,Default)]
+pub struct EkbConfigSnapshot {
+  pub bot_account: String,
+  pub channel: String,
+}
+impl From<&EkbTwitchConfig> for EkbConfigSnapshot {
+  fn from(config: &EkbTwitchConfig) -> Self {
+    Self {
+      bot_account: config.bot_account(),
+      channel: config.channel(),
+    }
+  }
+}
+
 #[derive(Debug, Clone)]
 pub struct EkbConfigDirs {
   pub config: PathBuf,
