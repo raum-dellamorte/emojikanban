@@ -233,7 +233,7 @@ impl Sourceable for EmojiKanBan {
     let screen_offset_x = settings.get(obs_string!("offset_x")).unwrap_or(0);
     let screen_offset_y = settings.get(obs_string!("offset_y")).unwrap_or(0);
     
-    let mut font_studio = FontStudio::new();
+    let mut font_studio = FontStudio::new(DEFAULT_CHAT_W, DEFAULT_CHAT_H);
     font_studio.add_text_block(500, (50,50), (36.0,40.0), Some(15.0), "emojiKanBan Loaded");
     source.update_source_settings(settings);
     Self {
@@ -438,7 +438,7 @@ impl Sourceable for ChattoKanBan {
     let chat_h = settings.get(obs_string!("chat_height")).unwrap_or(DEFAULT_CHAT_H);
     // let screen_offset_x = settings.get(obs_string!("offset_x")).unwrap_or(0);
     // let screen_offset_y = settings.get(obs_string!("offset_y")).unwrap_or(0);
-    let font_studio = FontStudio::new();
+    let font_studio = FontStudio::new(DEFAULT_CHAT_W, DEFAULT_CHAT_H);
     source.update_source_settings(settings);
     Self {
       source: source.downgrade(),

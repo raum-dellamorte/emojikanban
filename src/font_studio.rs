@@ -30,26 +30,25 @@ pub struct FontStudio {
   attrs: AttrsOwned,
   pub text_blocks: VecDeque<TextBlock>,
   pub chat_blocks: VecDeque<ChatMsgBlock>,
-  chat_w: f32,
-  chat_h: f32,
   user_metrics: (f32,f32),
   chat_bg_tex: Option<GraphicsTexture>,
   chat_life: f32,
+  chat_w: u32,
+  chat_h: u32,
   chat_offset: (i32,i32),
   chat_metrics: (f32,f32),
   chat_margin: i32,
-  chat_width: u32,
   pub always_draw_bg: bool,
 }
 
 impl FontStudio {
-  pub fn new() -> Self {
+  pub fn new(chat_w: u32, chat_h: u32) -> Self {
     let mut font_system = FontSystem::new();
     let swash_cache = SwashCache::new();
     let buffer = Buffer::new(&mut font_system, Metrics::new(20.0, 24.0)); // The metrics here don't matter, we reset it when text is added
     let attrs = Attrs::new();
     let attrs = AttrsOwned::new(&attrs);
-    let cbg_img = create_chat_bg(300,700,20.0,[10,50,10,179]);
+    let cbg_img = create_chat_bg(chat_w,chat_h,20.0,[10,50,10,179]);
     let chat_bg_tex = Some(gen_rgba_tex(cbg_img));
     Self {
       font_system,
@@ -58,20 +57,19 @@ impl FontStudio {
       attrs,
       text_blocks: VecDeque::new(),
       chat_blocks: VecDeque::new(),
-      chat_w: 300.0,
-      chat_h: 700.0,
       user_metrics: (26.0, 30.0),
       chat_bg_tex,
       chat_life: 120.0,
+      chat_w,
+      chat_h,
       chat_offset: (0,0),
       chat_metrics: (30.0,34.0),
       chat_margin: 10,
-      chat_width: 300,
       always_draw_bg: false,
     }
   }
   pub fn update_dimensions(&mut self, w: u32, h: u32) {
-    (self.chat_w, self.chat_h) = (w as f32, h as f32);
+    (self.chat_w, self.chat_h) = (w, h);
     let cbg_img = create_chat_bg(w,h,20.0,[10,50,10,179]);
     self.chat_bg_tex = Some(gen_rgba_tex(cbg_img));
   }
@@ -110,7 +108,7 @@ impl FontStudio {
     let mut buffer = self.buffer.borrow_with(&mut self.font_system);
     let (x_offset, y_offset) = self.chat_offset;
     let (font_size, line_height) = self.chat_metrics;
-    let img_w = self.chat_width.max(MIN_WIDTH);
+    let img_w = self.chat_w.max(MIN_WIDTH);
     let inner_w = img_w - (2 * self.chat_margin) as u32;
     let user: &str = &msg.user;
     let user_attrs = Attrs::new()
