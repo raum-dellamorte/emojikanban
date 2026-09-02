@@ -62,17 +62,23 @@ pub struct EkbSettings {
 }
 
 impl EkbSettings {
-  pub fn update_bot_account(&mut self, value: Cow<'_,str>) {
-    let value = validate_twitch_name(value);
-    if value.is_some() && let Ok(mut draft) = self.config_draft.lock() {
+  pub fn update_bot_account(&mut self, try_value: Cow<'_,str>) {
+    let value = validate_twitch_name(try_value.clone());
+    if value.is_none() {
+      log::warn!("bot account name entered failed to validate: {}", try_value);
+    }
+    if let Ok(mut draft) = self.config_draft.lock() {
       draft.bot_account = value;
     } else {
       log::error!("Failed to lock config_draft.")
     }
   }
-  pub fn update_channel(&mut self, value: Cow<'_,str>) {
-    let value = validate_twitch_name(value);
-    if value.is_some() && let Ok(mut draft) = self.config_draft.lock() {
+  pub fn update_channel(&mut self, try_value: Cow<'_,str>) {
+    let value = validate_twitch_name(try_value.clone());
+    if value.is_none() {
+      log::warn!("bot account name entered failed to validate: {}", try_value);
+    }
+    if let Ok(mut draft) = self.config_draft.lock() {
       draft.channel = value; // fixme!
     } else {
       log::error!("Failed to lock config_draft.")
@@ -90,7 +96,6 @@ impl Sourceable for EkbSettings {
   }
   fn create(create: &mut CreatableSourceContext<Self>, mut source: SourceRef) -> Self {
     let settings = &mut create.settings;
-    
     source.update_source_settings(settings);
     Self {
       source: source.downgrade(),
