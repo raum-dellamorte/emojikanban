@@ -404,12 +404,7 @@ pub async fn start_twitch_monitor(mut ekb_conf_dirs: EkbConfigDirs, conf: EkbTwi
 }
 
 #[allow(dead_code,unused)]
-pub fn start_youtube_monitor(mut ekb_conf_dirs: EkbConfigDirs, conf: EkbYouTubeConfig, tx: UnboundedSender<EmoteData>) -> Result<(), anyhow::Error> {
-  Ok(())
-}
-
-#[allow(dead_code,unused)]
-pub fn start_youtube_monitor(mut ekb_conf_dirs: EkbConfigDirs, conf: EkbYouTubeConfig, tx: UnboundedSender<EmoteData>) -> Result<(), anyhow::Error> {
+pub fn start_youtube_monitor(mut ekb_conf_dirs: EkbConfigDirs, conf: EkbYouTubeConfig, tx: mpsc::UnboundedSender<EmoteData>) -> Result<(), anyhow::Error> {
   Ok(())
 }
 
