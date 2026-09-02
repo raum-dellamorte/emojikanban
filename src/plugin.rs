@@ -457,44 +457,54 @@ impl VideoTickSource for EmojiKanBan {
     let w = data.screen_w as f32;
     let h = data.screen_h as f32;
     // data.check_twitch_connection();
-    while let Ok(ref chat_msg) = data.chat_rx.try_recv() {
-      data.font_studio.add_chat_msg(chat_msg.clone());
-      for emote_data in chat_msg.emotes.iter() {
-        let emote_data = emote_data.clone();
-        if (data.emote_queue.len() as u32) < data.emote_queue_max_length {
-          let mut emote: EmoteOBS = emote_data.into();
-          if emote.tex_vec.is_empty() || emote.frame >= emote.tex_vec.len() {
-            log::error!("tex_vec empty or current frame out of bounds: len: {} frame: {}", emote.tex_vec.len(), emote.frame);
-            continue;
+    loop { match data.chat_rx.try_recv() {
+      Ok(ref chat_msg) => {
+        data.font_studio.add_chat_msg(chat_msg.clone());
+        for emote_data in chat_msg.emotes.iter() {
+          let emote_data = emote_data.clone();
+          if (data.emote_queue.len() as u32) < data.emote_queue_max_length {
+            let mut emote: EmoteOBS = emote_data.into();
+            if emote.tex_vec.is_empty() || emote.frame >= emote.tex_vec.len() {
+              log::error!("tex_vec empty or current frame out of bounds: len: {} frame: {}", emote.tex_vec.len(), emote.frame);
+              continue;
+            }
+            let (ew, eh) = (emote.tex_vec[emote.frame].width() as f32, emote.tex_vec[emote.frame].height() as f32);
+            let picker = data.rng.random_range(1..=100);
+            emote.effect = Some(match picker {
+              1..=10 => {
+                SlideUpEffect::init(
+                  w,h,ew,eh,
+                  &mut data.rng,
+                )
+              }
+              11..=30 => {
+                InchWormEffect::init(
+                  w, h, ew, eh,
+                  &mut data.rng
+                )
+              }
+              31..=100 => {
+                GravityEffect::init(
+                  w,h,ew,eh,
+                  GRAVITY, BOUNCE,
+                  &mut data.rng,
+                )
+              }
+              _ => { unreachable!() }
+            });
+            data.emote_queue.push_back(emote);
           }
-          let (ew, eh) = (emote.tex_vec[emote.frame].width() as f32, emote.tex_vec[emote.frame].height() as f32);
-          let picker = data.rng.random_range(1..=100);
-          emote.effect = Some(match picker {
-            1..=10 => {
-              SlideUpEffect::init(
-                w,h,ew,eh,
-                &mut data.rng,
-              )
-            }
-            11..=30 => {
-              InchWormEffect::init(
-                w, h, ew, eh,
-                &mut data.rng
-              )
-            }
-            31..=100 => {
-              GravityEffect::init(
-                w,h,ew,eh,
-                GRAVITY, BOUNCE,
-                &mut data.rng,
-              )
-            }
-            _ => { unreachable!() }
-          });
-          data.emote_queue.push_back(emote);
         }
       }
-    }
+      Err(broadcast::error::TryRecvError::Lagged(skipped)) => {
+        log::warn!("Skipped {} stale chat messages", skipped);
+      }
+      Err(broadcast::error::TryRecvError::Empty) => break,
+      Err(broadcast::error::TryRecvError::Closed) => {
+        log::error!("EmojiKanBan chat broadcast closed");
+        break;
+      }
+    }}
     // Animate emotes in queue
     for emote in data.emote_queue.iter_mut() {
       emote.update(seconds);
