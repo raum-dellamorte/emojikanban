@@ -177,6 +177,13 @@ impl Module for EKBModule {
     // load_context.register_source(chatto_source);
     true
   }
+  fn unload(&mut self) {
+    self.settings_source.take();
+    self.tools_menu_state.take();
+    if let Some(runtime) = self.runtime.take() {
+      runtime.shutdown_timeout(std::time::Duration::from_millis(100));
+    }
+  }
   fn description() -> ObsString {
     obs_string!("Emote Wall and on-screen chat source for OBS.")
   }
