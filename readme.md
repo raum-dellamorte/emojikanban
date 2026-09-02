@@ -8,7 +8,7 @@ OBS plugin Emote Wall
 
 A local emote wall written in Rust as an OBS Plugin. No HTML, No JavaScript, No Meta Cookies. The only external reliance is on Twitch.tv (not that I've read the code of any of the libraries propping this creation up). A step towards self hosting whatever possible on open source software.
 
-Plugin gives new Source `emojikanban` which connects to Twitch via IRC and monitors chat for emotes to be drawn with some effect to the screen. It tries to make an effect with any emote used in chat (unless it's a single emote by itself for some reason). The maximum number of simultaneous emotes can be set in `Properties`. If the queue is at the limit, further emotes are ignored/skipped until there's room in the queue again.
+Plugin connects to Twitch via IRC and provides new Sources `EmojiKanBan`, an emote wall, and `ChattoKanBan`, a resizable chat window to remove the need for a Browser Source.  The emote wall monitors chat for emotes to be drawn to the screen with one of a few random effects. The maximum number of simultaneous emotes can be set in `Properties`. If the queue is at the limit, further emotes are ignored/skipped until there's room in the queue again. More emote wall control in the Properties dialog is planned.
 
 About The Name
 --------------
@@ -18,9 +18,9 @@ About The Name
 Status:
 =======
 
-Version 0.2.0 as of 2026-08-14
+Version 0.3.0 as of 2026-09-02 -> Now with built in Twitch Chat support, no more Browser Source nonsense. (Choice of colors used planned for 0.3.1)
 
-Now with FlatPak support!
+Version 0.2.0 as of 2026-08-14 -> Now with FlatPak support!
 
 Can be connected to Twitch from Properties menu!
 
@@ -53,8 +53,27 @@ Use at your own risk :) Rust does not prevent errors in logic. The crate I use t
 Basic Instructions:
 ===================
 
-- Add `emojikanban` as a source in your active scene after installing the plugin and ensuring that it's enabled.
-  - It will generate a configuration file if it does not already exist and initializes it with dummy data to be replaced with your `oauth` credentials
+- After installing the plugin and ensuring that it's enabled, add `EmojiKanBan` and/or `ChattoKanBan` as a Source/Sources in your active Scene.
+- Connect to Twitch:
+  - In OBS Studio, select the Tools menu and click `EmojiKanBan Configuration`.
+    - A Properties dialog will open in which you can enter:
+      - Your Twitch bot account name (or your primary account)
+      - The account name of the channel to be polled for chat
+    - Once those values are correct, click `Apply Below Bot Account and Channel Values To Config`
+  - Click `Request New Twitch OAuth Token And Connect` button.
+    - After clicking the button, `http://localhost:3000` should open in your default web browser.
+    - You should see "Use this **link** to authorize EmojiKanBan with Twitch"
+      - The link is the same as the link in the **Need OAUTH?** section below.
+    - If you're using a bot account, you may want to open the link in a Private Window.
+      - However, it doesn't seem to matter whether I auth with my primary or bot account no matter which name I put in the 'bot account' field.
+      - It may make a difference in the future if I add bot behaviour such as automated messages to chat
+    - The server on `localhost:3000` will:
+      - capture the authorization when complete
+      - write the new OAuth token to EmojiKanBan's config file automatically
+      - its duty fulfilled, the server will close
+
+Details about the config file for manual editing:
+  - EmojiKanBan will generate a configuration file if it does not already exist and initializes it with dummy data to be replaced with your `oauth` credentials
     - `[*nix: ~/.config | flatpak: ~/.var/app/com.obsproject.Studio/config | win: %APPDATA% ]/emojikanban/config.kdl`
       - Note: The file is now parsed as [KDL](https://kdl.dev/), but removing a key or value still may cause a failure to parse. [WIP]
       - Probably **DON'T** edit with `notepad.exe` as it messes with line endings. Notepad++ or a code editor is recommended.
@@ -63,16 +82,7 @@ Basic Instructions:
     - After `channel` change `streamer-name` to the account you intend to monitor via IRC for emote usage (generally your streamer account)
       - If you remove or comment out the `channel` line, it will default to
     - The `oauth` line is now best handled within OBS in the emojikanban `Properties` window, though it can be acquired manually.
-- Once `config.kdl` contains your `bot-account` and `channel`, using the `Connect Twitch` button as described below should just work. If not, restart OBS
-- Connect to Twitch:
-  - Open the Properties for your `emojikanban` source.
-  - Click `Connect Twitch` button.
-  - Navigate to `http://localhost:3000` in your web browser. You may want to use a Private Window if you want to connect with your Bot account.
-  - You should see a page with a link to authorize EmojiKanBan. It's the same as the link in the **Need OAUTH?** section below.
-  - The server on `localhost:3000` will capture the authorization when complete, write the new OAuth token to `config.kdl` automatically, and terminate.
-
-Manual OAuth:
-- Instructions for manually acquiring the needed OAUTH token can be found below under **Need OAUTH?** section
+      - Instructions for manually acquiring the needed OAUTH token can be found below under **Need OAUTH?** section
 
 Config
 ======
@@ -95,7 +105,7 @@ cd emojikanban
 ```
 
 Linux Installation Copy/Pasta:
-- built via `lin_build.sh` or `cargo build -r --target x86_64-unknown-linux-gnu`:
+- built via `zigbuild_lin.sh` or `cargo zigbuild -r --target x86_64-unknown-linux-gnu.2.31` for Flatpak compatibility:
   - Flatpak OBS:
     - 1st:     `mkdir -p ~/.var/app/com.obsproject.Studio/config/obs-studio/plugins/emojikanban/bin/64bit/`
     - symlink: `ln -s $(pwd)/target/x86_64-unknown-linux-gnu/release/libemojikanban.so ~/.var/app/com.obsproject.Studio/config/obs-studio/plugins/emojikanban/bin/64bit/`
