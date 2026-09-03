@@ -340,7 +340,7 @@ pub async fn start_twitch_monitor(mut ekb_conf_dirs: EkbConfigDirs, conf: EkbTwi
     match irc_response.unwrap().to_twitch_message_privmsg() {
       Err(e) => {
         // KeepAlive stuff will be here, like PING and PONG. No need to get excited.
-        log::info!("irc_response other than TwitchMessage::Privmsg: {}", e);
+        log::debug!("irc_response other than TwitchMessage::Privmsg: {}", e);
       }
       Ok(pm) => {
         let user: String = pm.display_name().unwrap_or("Anonymous").to_owned();
