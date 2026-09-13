@@ -361,10 +361,10 @@ pub async fn start_twitch_monitor(mut ekb_conf_dirs: EkbConfigDirs, conf: EkbTwi
               })
             })
           { // if let Ok(emote_data) = emotes.query_one(...)
-            log::info!("Loaded emote id {} from sqlite", emote.id);
+            log::debug!("Loaded emote id {} from sqlite", emote.id);
             emote_data
           } else {
-            log::info!("Could not find id {} in DB, downloading image to DB...", emote.id);
+            log::debug!("Could not find id {} in DB, downloading image to DB...", emote.id);
             let img_data = if let Ok(data) = reqwest::get(uri_v2).await {
               data 
             } else if let Ok(data) = reqwest::get(uri_v1).await { data } else {
@@ -391,7 +391,7 @@ pub async fn start_twitch_monitor(mut ekb_conf_dirs: EkbConfigDirs, conf: EkbTwi
             ) {
               log::error!("Failed to write emote to DB: {}", e)
             };
-            log::info!("Loaded emote id {} from URI", emote.id);
+            log::debug!("Loaded emote id {} from URI", emote.id);
             emote_data
           };
           chat_data.emotes.push(emote_data);
