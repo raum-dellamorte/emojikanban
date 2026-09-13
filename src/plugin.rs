@@ -16,7 +16,6 @@ use {
   },
   obs_wrapper::{
     graphics::*,
-    obs_string, 
     obs_sys::{
       OBS_SOURCE_CUSTOM_DRAW,
       obs_enter_graphics, 
@@ -86,7 +85,7 @@ impl EkbSettings {
 
 impl Sourceable for EkbSettings {
   fn get_id() -> ObsString {
-    obs_string!("emojikanban_settings")
+    "emojikanban_settings".into()
   }
   fn get_type() -> SourceType {
     SourceType::Input
@@ -106,7 +105,7 @@ impl Sourceable for EkbSettings {
 
 impl GetNameSource for EkbSettings {
   fn get_name() -> ObsString {
-    obs_string!("EmojiKanBan Settings")
+    "EmojiKanBan Settings".into()
   }
 }
 
@@ -192,13 +191,13 @@ impl GetPropertiesSource for EkbSettings {
     };
     props
       .add(
-        obs_string!("twitch_bot_account"),
-        obs_string!("Twitch bot account"),
+        "twitch_bot_account".into(),
+        "Twitch bot account".into(),
         TextProp::new(TextType::Default),
       )
       .add(
-        obs_string!("twitch_channel"),
-        obs_string!("Twitch channel"),
+        "twitch_channel".into(),
+        "Twitch channel".into(),
         TextProp::new(TextType::Default),
       );
     props
@@ -208,10 +207,10 @@ impl GetPropertiesSource for EkbSettings {
 impl UpdateSource for EkbSettings {
   fn update(&mut self, settings: &mut DataObj, _context: &mut GlobalContext) {
     let data = self;
-    if let Some(bot_account) = settings.get(obs_string!("twitch_bot_account")) {
+    if let Some(bot_account) = settings.get("twitch_bot_account") {
       data.update_bot_account(bot_account);
     }
-    if let Some(channel) = settings.get(obs_string!("twitch_channel")) {
+    if let Some(channel) = settings.get("twitch_channel") {
       data.update_channel(channel);
     }
   }
@@ -232,7 +231,7 @@ pub struct EmojiKanBan {
 
 impl Sourceable for EmojiKanBan {
   fn get_id() -> ObsString {
-    obs_string!("emojikanban")
+    "emojikanban".into()
   }
   fn get_type() -> SourceType {
     SourceType::Input
@@ -241,11 +240,11 @@ impl Sourceable for EmojiKanBan {
     log::info!("Creating EmojiKanBan Context");
     let chat_rx = ekb_broadcast().chat_tx.subscribe();
     let settings = &mut create.settings;
-    let emote_queue_max_length = settings.get(obs_string!("emotes_max")).unwrap_or(200);
-    let screen_w = settings.get(obs_string!("screen_width")).unwrap_or(1920);
-    let screen_h = settings.get(obs_string!("screen_height")).unwrap_or(1080);
-    let screen_offset_x = settings.get(obs_string!("offset_x")).unwrap_or(0);
-    let screen_offset_y = settings.get(obs_string!("offset_y")).unwrap_or(0);
+    let emote_queue_max_length = settings.get("emotes_max").unwrap_or(200);
+    let screen_w = settings.get("screen_width").unwrap_or(1920);
+    let screen_h = settings.get("screen_height").unwrap_or(1080);
+    let screen_offset_x = settings.get("offset_x").unwrap_or(0);
+    let screen_offset_y = settings.get("offset_y").unwrap_or(0);
     
     let mut font_studio = FontStudio::new(DEFAULT_CHAT_W, DEFAULT_CHAT_H);
     font_studio.add_text_block(500, (50,50), (36.0,40.0), Some(15.0), "emojiKanBan Loaded");
@@ -267,7 +266,7 @@ impl Sourceable for EmojiKanBan {
 
 impl GetNameSource for EmojiKanBan {
   fn get_name() -> ObsString {
-    obs_string!("EmojiKanBan")
+    "EmojiKanBan".into()
   }
 }
 
@@ -288,30 +287,30 @@ impl GetPropertiesSource for EmojiKanBan {
     let mut props = Properties::new();
     props
       .add(
-        obs_string!("emotes_max"), 
-        obs_string!("Cap the number of emotes to draw."), 
+        "emotes_max".into(), 
+        "Cap the number of emotes to draw.".into(), 
         NumberProp::new_int()
           .with_range(0..=1000)
           .with_slider(),
       )
       .add(
-        obs_string!("screen_width"),
-        obs_string!("Screen width"),
+        "screen_width".into(),
+        "Screen width".into(),
         NumberProp::new_int().with_range(1u32..=3840 * 3),
       )
       .add(
-        obs_string!("screen_height"),
-        obs_string!("Screen height"),
+        "screen_height".into(),
+        "Screen height".into(),
         NumberProp::new_int().with_range(1u32..=3840 * 3),
       )
       .add(
-        obs_string!("offset_x"),
-        obs_string!("Offset relative to the top left screen corner. X Offset:"),
+        "offset_x".into(),
+        "Offset relative to the top left screen corner. X Offset:".into(),
         NumberProp::new_int().with_range(1u32..=3840 * 3),
       )
       .add(
-        obs_string!("offset_y"),
-        obs_string!("Offset relative to the top left screen corner. Y Offset:"),
+        "offset_y".into(),
+        "Offset relative to the top left screen corner. Y Offset:".into(),
         NumberProp::new_int().with_range(1u32..=3840 * 3),
       );
     props
@@ -321,19 +320,19 @@ impl GetPropertiesSource for EmojiKanBan {
 impl UpdateSource for EmojiKanBan {
   fn update(&mut self, settings: &mut DataObj, _context: &mut GlobalContext) {
     let data = self;
-    if let Some(emotes_max) = settings.get(obs_string!("emotes_max")) {
+    if let Some(emotes_max) = settings.get("emotes_max") {
       data.emote_queue_max_length = emotes_max;
     }
-    if let Some(screen_width) = settings.get(obs_string!("screen_width")) {
+    if let Some(screen_width) = settings.get("screen_width") {
       data.screen_w = screen_width;
     }
-    if let Some(screen_height) = settings.get(obs_string!("screen_height")) {
+    if let Some(screen_height) = settings.get("screen_height") {
       data.screen_h = screen_height;
     }
-    if let Some(offset_x) = settings.get(obs_string!("offset_x")) {
+    if let Some(offset_x) = settings.get("offset_x") {
       data.screen_offset_x = offset_x;
     }
-    if let Some(offset_y) = settings.get(obs_string!("offset_y")) {
+    if let Some(offset_y) = settings.get("offset_y") {
       data.screen_offset_y = offset_y;
     }
   }
@@ -439,7 +438,7 @@ pub struct ChattoKanBan {
 
 impl Sourceable for ChattoKanBan {
   fn get_id() -> ObsString {
-    obs_string!("chattokanban")
+    "chattokanban".into()
   }
   fn get_type() -> SourceType {
     SourceType::Input
@@ -448,9 +447,9 @@ impl Sourceable for ChattoKanBan {
     log::info!("Creating ChattoKanBan Context");
     let chat_rx = ekb_broadcast().chat_tx.subscribe();
     let settings = &mut create.settings;
-    let chat_w = settings.get(obs_string!("chat_width")).unwrap_or(DEFAULT_CHAT_W);
-    let chat_h = settings.get(obs_string!("chat_height")).unwrap_or(DEFAULT_CHAT_H);
-    let always_draw_bg = settings.get(obs_string!("always_draw_bg")).unwrap_or(false);
+    let chat_w = settings.get("chat_width").unwrap_or(DEFAULT_CHAT_W);
+    let chat_h = settings.get("chat_height").unwrap_or(DEFAULT_CHAT_H);
+    let always_draw_bg = settings.get("always_draw_bg").unwrap_or(false);
     let mut font_studio = FontStudio::new(chat_w, chat_h);
     font_studio.always_draw_bg = always_draw_bg;
     source.update_source_settings(settings);
@@ -466,7 +465,7 @@ impl Sourceable for ChattoKanBan {
 
 impl GetNameSource for ChattoKanBan {
   fn get_name() -> ObsString {
-    obs_string!("ChattoKanBan")
+    "ChattoKanBan".into()
   }
 }
 
@@ -485,15 +484,15 @@ impl GetHeightSource for ChattoKanBan {
 impl GetDefaultsSource for ChattoKanBan {
   fn get_defaults(settings: &mut DataObj) {
     settings.set_default::<u32>(
-      obs_string!("chat_width"),
+      "chat_width",
       DEFAULT_CHAT_W
     );
     settings.set_default::<u32>(
-      obs_string!("chat_height"),
+      "chat_height",
       DEFAULT_CHAT_H
     );
     settings.set_default::<bool>(
-      obs_string!("always_draw_bg"),
+      "always_draw_bg",
       false,
     );
   }
@@ -504,18 +503,18 @@ impl GetPropertiesSource for ChattoKanBan {
     let mut props = Properties::new();
     props
       .add(
-        obs_string!("chat_width"),
-        obs_string!("Chat Width"),
+        "chat_width".into(),
+        "Chat Width".into(),
         NumberProp::new_int().with_range(150u32..=3840),
       )
       .add(
-        obs_string!("chat_height"),
-        obs_string!("Chat Height"),
+        "chat_height".into(),
+        "Chat Height".into(),
         NumberProp::new_int().with_range(150u32..=2160),
       )
       .add(
-        obs_string!("always_draw_bg"),
-        obs_string!("Always Draw Chat Background"),
+        "always_draw_bg".into(),
+        "Always Draw Chat Background".into(),
         BoolProp,
       );
     props
@@ -525,15 +524,15 @@ impl GetPropertiesSource for ChattoKanBan {
 impl UpdateSource for ChattoKanBan {
   fn update(&mut self, settings: &mut DataObj, _context: &mut GlobalContext) {
     let data = self;
-    let chat_w = settings.get(obs_string!("chat_width")).unwrap_or(DEFAULT_CHAT_W); 
-    let chat_h = settings.get(obs_string!("chat_height")).unwrap_or(DEFAULT_CHAT_H);
+    let chat_w = settings.get("chat_width").unwrap_or(DEFAULT_CHAT_W); 
+    let chat_h = settings.get("chat_height").unwrap_or(DEFAULT_CHAT_H);
     if data.chat_w != chat_w || data.chat_h != chat_h {
       data.chat_w = chat_w;
       data.chat_h = chat_h;
       data.font_studio.update_dimensions(data.chat_w, data.chat_h);
       // data.chat_layout_rebuild()
     }
-    if let Some(always_draw_bg) = settings.get(obs_string!("always_draw_bg")) {
+    if let Some(always_draw_bg) = settings.get("always_draw_bg") {
       data.font_studio.always_draw_bg = always_draw_bg;
     }
   }
