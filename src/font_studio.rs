@@ -18,7 +18,9 @@ use {
   },
   obs_wrapper::graphics::*,
   std::{
+    cell::RefCell,
     collections::VecDeque,
+    rc::Rc,
     sync::Arc,
   },
 };
@@ -29,7 +31,7 @@ pub struct FontStudio {
   buffer: Buffer,
   attrs: AttrsOwned,
   pub text_blocks: VecDeque<TextBlock>,
-  pub chat_blocks: VecDeque<ChatMsgBlock>,
+  pub chat_blocks: VecDeque<ChatDataWithBlock>,
   user_metrics: (f32,f32),
   chat_bg_tex: Option<GraphicsTexture>,
   chat_life: f32,
@@ -75,15 +77,16 @@ impl FontStudio {
   }
   pub fn update(&mut self, seconds: f32) {
     self.text_blocks.retain(|tblk| tblk.is_alive() );
-    self.chat_blocks.retain(|tblk| tblk.is_alive() );
+    self.chat_blocks.retain(|cblk| cblk.is_alive() );
     for tblk in self.text_blocks.iter_mut() {
       tblk.update(seconds);
     }
     let mut current_y = self.chat_offset.1 + self.chat_margin;
-    for cblk in self.chat_blocks.iter_mut() {
-      cblk.set_y(current_y);
-      cblk.update(seconds);
-      current_y += cblk.height() as i32;
+    for cdata in self.chat_blocks.iter_mut() {
+      if cdata.block.is_none() { continue; }
+      cdata.set_y(current_y);
+      cdata.update(seconds);
+      current_y += cdata.height() as i32;
     }
   }
   pub fn add_text_block(&mut self, image_width: u32, offset: (i32,i32), metrics: (f32,f32), life: Option<f32>, txt: &str) {
@@ -105,11 +108,30 @@ impl FontStudio {
     self.text_blocks.push_back(tblk);
   }
   pub fn add_chat_msg(&mut self, msg: Arc<ChatData>) {
+    let mut msg = ChatDataWithBlock { data: msg, block: None, life: Some(self.chat_life) };
+    self.build_chat_msg(&mut msg);
+    self.chat_blocks.push_back(msg);
+  }
+  pub fn rebuild_chats(&mut self) {
+    self.chat_blocks.iter_mut().for_each(|cdata| {
+      cdata.block.take();
+    });
+    let mut chat_data: VecDeque<ChatDataWithBlock> = self.chat_blocks.iter().cloned().collect();
+    for msg in chat_data.iter_mut() {
+      self.build_chat_msg(msg);
+    }
+    self.chat_blocks.clear();
+    while chat_data.len() > 0 {
+      self.chat_blocks.push_back(chat_data.pop_front().unwrap());
+    }
+  }
+  fn build_chat_msg(&mut self, chat_data: &mut ChatDataWithBlock) {
     let mut buffer = self.buffer.borrow_with(&mut self.font_system);
     let (x_offset, y_offset) = self.chat_offset;
     let (font_size, line_height) = self.chat_metrics;
     let img_w = self.chat_w.max(MIN_WIDTH);
     let inner_w = img_w - (2 * self.chat_margin) as u32;
+    let msg = chat_data.data.clone();
     let user: &str = &msg.user;
     let user_attrs = Attrs::new()
       .color(msg.uname_color.unwrap_or(Color::rgb(0xC8, 0x64, 0xC8)))
@@ -230,12 +252,12 @@ impl FontStudio {
     let msg_img = add_text_outline(&msg_img, 2, Rgba([170,0,0,255]));
     let msg_tex = gen_rgba_tex(msg_img);
     let cblk = ChatMsgBlock {
-      usr_tex, msg_tex, inline_emotes, emote_size, life: Some(self.chat_life),
+      usr_tex, msg_tex, inline_emotes, emote_size,
       x_offset, y_offset,
       msg_y_offset: self.user_metrics.1 as i32,
       msg_indent, 
     };
-    self.chat_blocks.push_back(cblk);
+    chat_data.block = Some(Rc::new(RefCell::new(cblk)));
   }
   pub fn draw(&self) {
     if (self.always_draw_bg || !self.chat_blocks.is_empty()) && let Some(bg) = self.chat_bg_tex.as_ref() {
@@ -259,49 +281,65 @@ pub trait FontStudioTextBlock {
   fn set_y(&mut self, val: i32);
 }
 
+#[derive(Clone)]
+pub struct ChatDataWithBlock {
+  data: Arc<ChatData>,
+  block: Option<Rc<RefCell<ChatMsgBlock>>>,
+  life: Option<f32>,
+}
+
 pub struct ChatMsgBlock {
   usr_tex: GraphicsTexture,
   msg_tex: GraphicsTexture,
   inline_emotes: Vec<ChatInlineEmote>,
   emote_size: u32,
-  life: Option<f32>,
   pub x_offset: i32,
   pub y_offset: i32,
   msg_y_offset: i32,
   msg_indent: i32,
 }
 
-impl FontStudioTextBlock for ChatMsgBlock {
+impl FontStudioTextBlock for ChatDataWithBlock {
   fn draw(&self) {
-    self.usr_tex.draw(self.x_offset, self.y_offset, 0, 0, false);
-    let msg_global_x = self.x_offset + self.msg_indent;
-    let msg_global_y = self.y_offset + self.msg_y_offset;
-    self.msg_tex.draw(msg_global_x, msg_global_y, 0, 0, false);
-    for emote in self.inline_emotes.iter() {
+    let Some(block) = self.block.as_ref() else { return; };
+    let cblk = block.borrow();
+    cblk.usr_tex.draw(cblk.x_offset, cblk.y_offset, 0, 0, false);
+    let msg_global_x = cblk.x_offset + cblk.msg_indent;
+    let msg_global_y = cblk.y_offset + cblk.msg_y_offset;
+    cblk.msg_tex.draw(msg_global_x, msg_global_y, 0, 0, false);
+    for emote in cblk.inline_emotes.iter() {
       let (x,y) = emote.local;
       emote.emote.current_frame().draw(
-        msg_global_x + x, msg_global_y + y, self.emote_size, self.emote_size, false);
+        msg_global_x + x, msg_global_y + y, cblk.emote_size, cblk.emote_size, false);
     }
   }
   fn is_alive(&self) -> bool {
     self.life.is_none_or(|life| life > 0.0)
   }
   fn height(&self) -> u32 {
-    self.msg_y_offset as u32 + self.msg_tex.height()
+    let Some(block) = self.block.as_ref() else { return 0; };
+    let cblk = block.borrow();
+    cblk.msg_y_offset as u32 + cblk.msg_tex.height()
   }
   fn update(&mut self, seconds: f32) {
     if let Some(life) = self.life.as_mut() {
       *life -= seconds;
     }
-    for emote in self.inline_emotes.iter_mut() {
-      emote.emote.update(seconds);
+    if let Some(block) = self.block.as_ref() {
+      for emote in block.borrow_mut().inline_emotes.iter_mut() {
+        emote.emote.update(seconds);
+      }
     }
   }
   fn set_x(&mut self, val: i32) {
-    self.x_offset = val;
+    if let Some(block) = self.block.as_ref() {
+      block.borrow_mut().x_offset = val;
+    }
   }
   fn set_y(&mut self, val: i32) {
-    self.y_offset = val;
+    if let Some(block) = self.block.as_ref() {
+      block.borrow_mut().y_offset = val;
+    }
   }
 }
 
