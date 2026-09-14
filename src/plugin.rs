@@ -26,6 +26,7 @@ use {
     prelude::*, 
     properties::*, 
     source::*,
+    obs_string,
   },
   rand::prelude::*,
   std::{
@@ -85,7 +86,7 @@ impl EkbSettings {
 
 impl Sourceable for EkbSettings {
   fn get_id() -> ObsString {
-    "emojikanban_settings".into()
+    obs_string!("emojikanban_settings")
   }
   fn get_type() -> SourceType {
     SourceType::Input
@@ -105,7 +106,7 @@ impl Sourceable for EkbSettings {
 
 impl GetNameSource for EkbSettings {
   fn get_name() -> ObsString {
-    "EmojiKanBan Settings".into()
+    obs_string!("EmojiKanBan Settings")
   }
 }
 
@@ -129,8 +130,8 @@ impl GetPropertiesSource for EkbSettings {
     let mut props = Properties::new();
     let cmd_tx = self.cmd_tx.clone();
     props.add_button(
-      "twitch_authenticate".into(),
-      "Request New Twitch OAuth Token And Connect".into(),
+      obs_string!("twitch_authenticate"),
+      obs_string!("Request New Twitch OAuth Token And Connect"),
       move || {
         log::info!("EmojiKanBan attempting to (re)authenticate Twitch for access to chat. Server starting on http://localhost:3000/");
         let cmd_tx = cmd_tx.clone();
@@ -162,8 +163,8 @@ impl GetPropertiesSource for EkbSettings {
       let config_draft = self.config_draft.clone();
       let cmd_tx = self.cmd_tx.clone();
       props.add_button(
-        "twitch_config_update".into(),
-        "Apply Below Bot Account and Channel Values To Config".into(),
+        obs_string!("twitch_config_update"),
+        obs_string!("Apply Below Bot Account and Channel Values To Config"),
         move || {
           log::info!("EmojiKanBan updating config.kdl with new bot-account/channel values.");
           let update = match config_draft.lock() {
@@ -191,13 +192,13 @@ impl GetPropertiesSource for EkbSettings {
     };
     props
       .add(
-        "twitch_bot_account".into(),
-        "Twitch bot account".into(),
+        obs_string!("twitch_bot_account"),
+        obs_string!("Twitch bot account"),
         TextProp::new(TextType::Default),
       )
       .add(
-        "twitch_channel".into(),
-        "Twitch channel".into(),
+        obs_string!("twitch_channel"),
+        obs_string!("Twitch channel"),
         TextProp::new(TextType::Default),
       );
     props
@@ -231,7 +232,7 @@ pub struct EmojiKanBan {
 
 impl Sourceable for EmojiKanBan {
   fn get_id() -> ObsString {
-    "emojikanban".into()
+    obs_string!("emojikanban")
   }
   fn get_type() -> SourceType {
     SourceType::Input
@@ -266,7 +267,7 @@ impl Sourceable for EmojiKanBan {
 
 impl GetNameSource for EmojiKanBan {
   fn get_name() -> ObsString {
-    "EmojiKanBan".into()
+    obs_string!("EmojiKanBan")
   }
 }
 
@@ -287,30 +288,30 @@ impl GetPropertiesSource for EmojiKanBan {
     let mut props = Properties::new();
     props
       .add(
-        "emotes_max".into(), 
-        "Cap the number of emotes to draw.".into(), 
+        obs_string!("emotes_max"), 
+        obs_string!("Cap the number of emotes to draw."), 
         NumberProp::new_int()
           .with_range(0..=1000)
           .with_slider(),
       )
       .add(
-        "screen_width".into(),
-        "Screen width".into(),
+        obs_string!("screen_width"),
+        obs_string!("Screen width"),
         NumberProp::new_int().with_range(1u32..=3840 * 3),
       )
       .add(
-        "screen_height".into(),
-        "Screen height".into(),
+        obs_string!("screen_height"),
+        obs_string!("Screen height"),
         NumberProp::new_int().with_range(1u32..=3840 * 3),
       )
       .add(
-        "offset_x".into(),
-        "Offset relative to the top left screen corner. X Offset:".into(),
+        obs_string!("offset_x"),
+        obs_string!("Offset relative to the top left screen corner. X Offset:"),
         NumberProp::new_int().with_range(1u32..=3840 * 3),
       )
       .add(
-        "offset_y".into(),
-        "Offset relative to the top left screen corner. Y Offset:".into(),
+        obs_string!("offset_y"),
+        obs_string!("Offset relative to the top left screen corner. Y Offset:"),
         NumberProp::new_int().with_range(1u32..=3840 * 3),
       );
     props
@@ -438,7 +439,7 @@ pub struct ChattoKanBan {
 
 impl Sourceable for ChattoKanBan {
   fn get_id() -> ObsString {
-    "chattokanban".into()
+    obs_string!("chattokanban")
   }
   fn get_type() -> SourceType {
     SourceType::Input
@@ -465,7 +466,7 @@ impl Sourceable for ChattoKanBan {
 
 impl GetNameSource for ChattoKanBan {
   fn get_name() -> ObsString {
-    "ChattoKanBan".into()
+    obs_string!("ChattoKanBan")
   }
 }
 
@@ -503,18 +504,18 @@ impl GetPropertiesSource for ChattoKanBan {
     let mut props = Properties::new();
     props
       .add(
-        "chat_width".into(),
-        "Chat Width".into(),
+        obs_string!("chat_width"),
+        obs_string!("Chat Width"),
         NumberProp::new_int().with_range(150u32..=3840),
       )
       .add(
-        "chat_height".into(),
-        "Chat Height".into(),
+        obs_string!("chat_height"),
+        obs_string!("Chat Height"),
         NumberProp::new_int().with_range(150u32..=2160),
       )
       .add(
-        "always_draw_bg".into(),
-        "Always Draw Chat Background".into(),
+        obs_string!("always_draw_bg"),
+        obs_string!("Always Draw Chat Background"),
         BoolProp,
       );
     props
