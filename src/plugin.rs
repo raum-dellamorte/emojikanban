@@ -545,7 +545,7 @@ impl VideoTickSource for ChattoKanBan {
     loop { match data.chat_rx.try_recv() {
       Ok(ref chat_msg) => { data.font_studio.add_chat_msg(chat_msg.clone()); }
       Err(broadcast::error::TryRecvError::Lagged(skipped)) => {
-        log::warn!("Skipped {} stale chat messages", skipped);
+        log::debug!("Skipped {} stale chat messages", skipped);
       }
       Err(broadcast::error::TryRecvError::Empty) => break,
       Err(broadcast::error::TryRecvError::Closed) => {
