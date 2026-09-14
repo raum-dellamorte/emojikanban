@@ -172,7 +172,7 @@ impl Module for EkbModule {
       .with_icon(Icon::Slideshow)
       .build();
     load_context.register_source(emojikanban_info);
-    let chatto_source = load_context
+    let chatto_info = load_context
       .create_source_builder::<ChattoKanBan>()
       .enable_get_name()
       .enable_get_defaults()
@@ -184,7 +184,7 @@ impl Module for EkbModule {
       .enable_video_tick()
       .with_icon(Icon::Text)
       .build();
-    load_context.register_source(chatto_source);
+    load_context.register_source(chatto_info);
     true
   }
   fn unload(&mut self) {
