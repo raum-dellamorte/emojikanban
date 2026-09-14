@@ -451,7 +451,23 @@ impl Sourceable for ChattoKanBan {
     let chat_w = settings.get("chat_width").unwrap_or(DEFAULT_CHAT_W);
     let chat_h = settings.get("chat_height").unwrap_or(DEFAULT_CHAT_H);
     let always_draw_bg = settings.get("always_draw_bg").unwrap_or(false);
+    let bg_color = settings.get("chat_bg_color");
+    let text_color = settings.get("chat_text_color");
+    let outline_color = settings.get("chat_outline_color");
+    let msg_ptr_color = settings.get("chat_msg_ptr_color");
     let mut font_studio = FontStudio::new(chat_w, chat_h);
+    if let Some(color_u32) = bg_color {
+      font_studio.update_bg_color_u32(color_u32);
+    }
+    if let Some(color_u32) = text_color {
+      font_studio.update_text_color_u32(color_u32);
+    }
+    if let Some(color_u32) = outline_color {
+      font_studio.update_outline_color_u32(color_u32);
+    }
+    if let Some(color_u32) = msg_ptr_color {
+      font_studio.update_msg_ptr_color_u32(color_u32);
+    }
     font_studio.always_draw_bg = always_draw_bg;
     source.update_source_settings(settings);
     Self {
@@ -496,6 +512,22 @@ impl GetDefaultsSource for ChattoKanBan {
       "always_draw_bg",
       false,
     );
+    settings.set_default::<u32>(
+      "chat_bg_color",
+      0xB30A320A_u32, // AABBGGRR
+    );
+    settings.set_default::<u32>(
+      "chat_text_color",
+      0xFFC8C8C8_u32, // AABBGGRR
+    );
+    settings.set_default::<u32>(
+      "chat_outline_color",
+      0xFF0000AA_u32, // AABBGGRR
+    );
+    settings.set_default::<u32>(
+      "chat_msg_ptr_color",
+      0xFF778736_u32, // AABBGGRR
+    );
   }
 }
 
@@ -517,7 +549,28 @@ impl GetPropertiesSource for ChattoKanBan {
         obs_string!("always_draw_bg"),
         obs_string!("Always Draw Chat Background"),
         BoolProp,
-      );
+      )
+      .add(
+        obs_string!("chat_bg_color"),
+        obs_string!("Chat Background Color"),
+        ColorAlphaProp,
+      )
+      .add(
+        obs_string!("chat_text_color"),
+        obs_string!("Chat Text Color"),
+        ColorAlphaProp,
+      )
+      .add(
+        obs_string!("chat_outline_color"),
+        obs_string!("Chat Text Outline Color"),
+        ColorAlphaProp,
+      )
+      .add(
+        obs_string!("chat_msg_ptr_color"),
+        obs_string!("Chat Message Pointer Color"),
+        ColorAlphaProp,
+      )
+    ;
     props
   }
 }
@@ -535,6 +588,18 @@ impl UpdateSource for ChattoKanBan {
     }
     if let Some(always_draw_bg) = settings.get("always_draw_bg") {
       data.font_studio.always_draw_bg = always_draw_bg;
+    }
+    if let Some(color_u32) = settings.get("chat_bg_color") {
+      data.font_studio.update_bg_color_u32(color_u32);
+    }
+    if let Some(color_u32) = settings.get("chat_text_color") {
+      data.font_studio.update_text_color_u32(color_u32);
+    }
+    if let Some(color_u32) = settings.get("chat_outline_color") {
+      data.font_studio.update_outline_color_u32(color_u32);
+    }
+    if let Some(color_u32) = settings.get("chat_msg_ptr_color") {
+      data.font_studio.update_msg_ptr_color_u32(color_u32);
     }
   }
 }

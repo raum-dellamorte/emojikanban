@@ -33,7 +33,13 @@ pub struct FontStudio {
   pub text_blocks: VecDeque<TextBlock>,
   pub chat_blocks: VecDeque<ChatDataWithBlock>,
   user_metrics: (f32,f32),
-  chat_bg_tex: Option<GraphicsTexture>,
+  bg_color: Color,
+  bg_rounding: f32,
+  bg_redraw: bool,
+  bg_tex: Option<GraphicsTexture>,
+  text_color: Color,
+  outline_color: Color,
+  msg_ptr_color: Color,
   chat_life: f32,
   chat_w: u32,
   chat_h: u32,
@@ -50,8 +56,12 @@ impl FontStudio {
     let buffer = Buffer::new(&mut font_system, Metrics::new(20.0, 24.0)); // The metrics here don't matter, we reset it when text is added
     let attrs = Attrs::new();
     let attrs = AttrsOwned::new(&attrs);
-    let cbg_img = create_chat_bg(chat_w,chat_h,20.0,[10,50,10,179]);
-    let chat_bg_tex = Some(gen_rgba_tex(cbg_img));
+    let bg_color = Color::rgba(0x0A, 0x32, 0x0A, 0xB3);
+    let text_color = Color::rgba(0xC8, 0xC8, 0xC8, 0xFF);
+    let outline_color = Color::rgba(0xAA, 0x00, 0x00, 0xFF);
+    let msg_ptr_color = Color::rgba(0x36, 0x87, 0x77, 0xFF);
+    let cbg_img = create_chat_bg(chat_w,chat_h,20.0,bg_color.as_rgba());
+    let bg_tex = Some(gen_rgba_tex(cbg_img));
     Self {
       font_system,
       swash_cache,
@@ -60,7 +70,13 @@ impl FontStudio {
       text_blocks: VecDeque::new(),
       chat_blocks: VecDeque::new(),
       user_metrics: (26.0, 30.0),
-      chat_bg_tex,
+      bg_color,
+      bg_rounding: 20.0,
+      bg_redraw: false,
+      bg_tex,
+      text_color,
+      outline_color,
+      msg_ptr_color,
       chat_life: 120.0,
       chat_w,
       chat_h,
@@ -72,8 +88,38 @@ impl FontStudio {
   }
   pub fn update_dimensions(&mut self, w: u32, h: u32) {
     (self.chat_w, self.chat_h) = (w, h);
-    let cbg_img = create_chat_bg(w,h,20.0,[10,50,10,179]);
-    self.chat_bg_tex = Some(gen_rgba_tex(cbg_img));
+    self.bg_redraw = true;
+  }
+  pub fn update_bg_color(&mut self, color: [u8;4]) {
+    self.bg_color = Color::rgba(color[0], color[1], color[2], color[3]);
+    self.bg_redraw = true;
+  }
+  pub fn update_bg_color_u32(&mut self, color: u32) {
+    self.update_bg_color(rgba_array_from_u32(color));
+  }
+  pub fn update_text_color(&mut self, color: [u8;4]) {
+    self.text_color = Color::rgba(color[0], color[1], color[2], color[3]);
+  }
+  pub fn update_text_color_u32(&mut self, color: u32) {
+    self.update_text_color(rgba_array_from_u32(color));
+  }
+  pub fn update_outline_color(&mut self, color: [u8;4]) {
+    self.outline_color = Color::rgba(color[0], color[1], color[2], color[3]);
+  }
+  pub fn update_outline_color_u32(&mut self, color: u32) {
+    self.update_outline_color(rgba_array_from_u32(color));
+  }
+  pub fn update_msg_ptr_color(&mut self, color: [u8;4]) {
+    self.msg_ptr_color = Color::rgba(color[0], color[1], color[2], color[3]);
+  }
+  pub fn update_msg_ptr_color_u32(&mut self, color: u32) {
+    self.update_msg_ptr_color(rgba_array_from_u32(color));
+  }
+  pub fn redraw_bg_texture(&mut self) {
+    if !self.bg_redraw { return; }
+    self.bg_redraw = false;
+    let cbg_img = create_chat_bg(self.chat_w,self.chat_h,self.bg_rounding,self.bg_color.as_rgba());
+    self.bg_tex = Some(gen_rgba_tex(cbg_img));
   }
   pub fn update(&mut self, seconds: f32) {
     self.text_blocks.retain(|tblk| tblk.is_alive() );
@@ -88,11 +134,11 @@ impl FontStudio {
       cdata.update(seconds);
       current_y += cdata.height() as i32;
     }
+    self.redraw_bg_texture();
   }
   pub fn add_text_block(&mut self, image_width: u32, offset: (i32,i32), metrics: (f32,f32), life: Option<f32>, txt: &str) {
     let mut buffer = self.buffer.borrow_with(&mut self.font_system);
     let (x_offset, y_offset) = offset;
-    let text_color = Color::rgb(0xFF, 0xFF, 0xFF);
     let img_w = image_width.max(MIN_WIDTH);
     let inner_w = img_w - (2 * self.chat_margin as u32);
     buffer.set_size(Some(inner_w as f32), None);
@@ -102,7 +148,7 @@ impl FontStudio {
     let img_h = buffer.layout_runs().map(|run| run.line_top + run.line_height)
       .fold(0.0f32, f32::max).ceil() as u32 + (2 * self.chat_margin as u32);
     let mut img = RgbaImage::from_pixel(img_w, img_h, Rgba([0,0,0,0]));
-    buffer.draw(&mut self.swash_cache, text_color, draw_buffer(&mut img, self.chat_margin));
+    buffer.draw(&mut self.swash_cache, self.text_color, draw_buffer(&mut img, self.chat_margin));
     let tex = gen_rgba_tex(img);
     let tblk = TextBlock { tex, life, x_offset, y_offset, };
     self.text_blocks.push_back(tblk);
@@ -134,12 +180,12 @@ impl FontStudio {
     let msg = chat_data.data.clone();
     let user: &str = &msg.user;
     let user_attrs = Attrs::new()
-      .color(msg.uname_color.unwrap_or(Color::rgb(0xC8, 0x64, 0xC8)))
+      .color(msg.uname_color.unwrap_or(Color::rgb(0xC8, 0x64, 0xC8))) // Default username color u32 0xFFC864C8
       .font_features(FontFeatures::new().enable(FeatureTag::SMALL_CAPS).to_owned())
       .metrics(Metrics::new(self.user_metrics.0, self.user_metrics.1))
       .weight(Weight::BOLD);
     let msg_ptr_attrs = Attrs::new()
-      .color(Color::rgb(0x36, 0x87, 0x77))
+      .color(self.msg_ptr_color)
       .metrics(Metrics::new(self.chat_metrics.0, self.chat_metrics.1))
       .weight(Weight::BOLD);
     buffer.set_size(Some(inner_w as f32), None);
@@ -160,8 +206,7 @@ impl FontStudio {
     let msg_indent: i32 = buffer.layout_runs().last().map(|run| run.line_w.ceil() as i32 )
         .unwrap_or(0) + self.chat_margin;
     let mut usr_img = RgbaImage::from_pixel(img_w, img_h, Rgba([0,0,0,0]));
-    let text_color = Color::rgb(0xFF, 0xFF, 0xFF);
-    buffer.draw(&mut self.swash_cache, text_color, draw_buffer(&mut usr_img, self.chat_margin));
+    buffer.draw(&mut self.swash_cache, self.text_color, draw_buffer(&mut usr_img, self.chat_margin));
     let usr_tex = gen_rgba_tex(usr_img);
     // 
     // Generate chat message image
@@ -180,7 +225,7 @@ impl FontStudio {
       filtered
     };
     let msg_txt: &str = &msg_string;
-    let msg_attrs = Attrs::new().color(Color::rgb(0xC8, 0xC8, 0xC8));
+    let msg_attrs = Attrs::new().color(self.text_color);
     buffer.set_size(Some((inner_w as i32 - msg_indent) as f32), None);
     let emote_size = self.chat_metrics.1.ceil() as u32;
     let emote_size = emote_size.saturating_sub(1);
@@ -247,9 +292,9 @@ impl FontStudio {
       Some(ChatInlineEmote {emote, local})
     }).collect();
     let mut msg_img = RgbaImage::from_pixel(inner_w, img_h, Rgba([0,0,0,0]));
-    let text_color = Color::rgb(0xFF, 0xFF, 0xFF);
-    buffer.draw(&mut self.swash_cache, text_color, draw_buffer(&mut msg_img, self.chat_margin));
-    let msg_img = add_text_outline(&msg_img, 2, Rgba([170,0,0,255]));
+    // let text_color = Color::rgb(0xFF, 0xFF, 0xFF);
+    buffer.draw(&mut self.swash_cache, self.text_color, draw_buffer(&mut msg_img, self.chat_margin));
+    let msg_img = add_text_outline(&msg_img, 2, Rgba(self.outline_color.as_rgba()));
     let msg_tex = gen_rgba_tex(msg_img);
     let cblk = ChatMsgBlock {
       usr_tex, msg_tex, inline_emotes, emote_size,
@@ -260,7 +305,7 @@ impl FontStudio {
     chat_data.block = Some(Rc::new(RefCell::new(cblk)));
   }
   pub fn draw(&self) {
-    if (self.always_draw_bg || !self.chat_blocks.is_empty()) && let Some(bg) = self.chat_bg_tex.as_ref() {
+    if (self.always_draw_bg || !self.chat_blocks.is_empty()) && let Some(bg) = self.bg_tex.as_ref() {
       bg.draw(self.chat_offset.0, self.chat_offset.1, 0, 0, false);
     }
     for tblk in self.text_blocks.iter() {
@@ -519,6 +564,18 @@ impl From<Option<twitch_message::Color>> for ColorConverter<Color> {
       ColorConverter(Some(Color::rgb(c.0, c.1, c.2)))
     } else { ColorConverter(None) }
   }
+}
+
+/// Convert OBS u32 color to rgba u8 array
+/// 
+/// Note: OBS displays colors as #AARRGGBB but seems to format the u32 as AABBGGRR
+pub fn rgba_array_from_u32(color: u32) -> [u8;4] {
+  let r =  color        as u8;
+  let g = (color >>  8) as u8;
+  let b = (color >> 16) as u8;
+  let a = (color >> 24) as u8;
+  log::debug!("u32 0xAABBGGRR color {:#010X} to u8 array [r: {}, g: {}, b: {}, a: {}]", color, r, g, b, a);
+  [r,g,b,a]
 }
 
 // const EMOTE_PLACEHOLDER: &str = "\u{2003}";
