@@ -18,6 +18,8 @@ About The Name
 Status:
 =======
 
+Version 0.3.2 as of 2026-09-14 -> Changing text colors redraws already on-screen chats with the new colors.
+
 Version 0.3.1 as of 2026-09-14 -> ChattoKanBan Twitch Chat now supports text and background color customization.
 
 Version 0.3.0 as of 2026-09-02 -> Now with built in Twitch Chat support, no more Browser Source nonsense.

@@ -514,19 +514,19 @@ impl GetDefaultsSource for ChattoKanBan {
     );
     settings.set_default::<u32>(
       "chat_bg_color",
-      0xB30A320A_u32, // AABBGGRR
+      rgba_to_obs_u32([0x0A,0x32,0x0A,0xB3]),
     );
     settings.set_default::<u32>(
       "chat_text_color",
-      0xFFC8C8C8_u32, // AABBGGRR
+      rgba_to_obs_u32([0xC8,0xC8,0xC8,0xFF]),
     );
     settings.set_default::<u32>(
       "chat_outline_color",
-      0xFF0000AA_u32, // AABBGGRR
+      rgba_to_obs_u32([0xAA,0x00,0x00,0xFF]),
     );
     settings.set_default::<u32>(
       "chat_msg_ptr_color",
-      0xFF778736_u32, // AABBGGRR
+      rgba_to_obs_u32([0x36,0x87,0x77,0xFF]),
     );
   }
 }

@@ -35,7 +35,8 @@ pub struct FontStudio {
   user_metrics: (f32,f32),
   bg_color: Color,
   bg_rounding: f32,
-  bg_redraw: bool,
+  redraw_bg_timer: Option<f32>,
+  redraw_chat_timer: Option<f32>,
   bg_tex: Option<GraphicsTexture>,
   text_color: Color,
   outline_color: Color,
@@ -72,7 +73,8 @@ impl FontStudio {
       user_metrics: (26.0, 30.0),
       bg_color,
       bg_rounding: 20.0,
-      bg_redraw: false,
+      redraw_bg_timer: None,
+      redraw_chat_timer: None,
       bg_tex,
       text_color,
       outline_color,
@@ -87,43 +89,71 @@ impl FontStudio {
     }
   }
   pub fn update_dimensions(&mut self, w: u32, h: u32) {
+    if self.chat_w == w && self.chat_h == h { return; }
     (self.chat_w, self.chat_h) = (w, h);
-    self.bg_redraw = true;
+    self.redraw_bg_timer = Some(0.5);
+    self.redraw_chat_timer = Some(0.5);
   }
   pub fn update_bg_color(&mut self, color: [u8;4]) {
+    if self.bg_color.as_rgba() == color { return; }
     self.bg_color = Color::rgba(color[0], color[1], color[2], color[3]);
-    self.bg_redraw = true;
+    self.redraw_bg_timer = Some(0.5);
   }
   pub fn update_bg_color_u32(&mut self, color: u32) {
     self.update_bg_color(rgba_array_from_u32(color));
   }
   pub fn update_text_color(&mut self, color: [u8;4]) {
+    if self.text_color.as_rgba() == color { return; }
     self.text_color = Color::rgba(color[0], color[1], color[2], color[3]);
+    log::info!("New text color {:?}", self.text_color.as_rgba());
+    self.redraw_chat_timer = Some(0.5);
   }
   pub fn update_text_color_u32(&mut self, color: u32) {
     self.update_text_color(rgba_array_from_u32(color));
   }
   pub fn update_outline_color(&mut self, color: [u8;4]) {
+    if self.outline_color.as_rgba() == color { return; }
     self.outline_color = Color::rgba(color[0], color[1], color[2], color[3]);
+    log::info!("New outline color {:?}", self.outline_color.as_rgba());
+    self.redraw_chat_timer = Some(0.5);
   }
   pub fn update_outline_color_u32(&mut self, color: u32) {
     self.update_outline_color(rgba_array_from_u32(color));
   }
   pub fn update_msg_ptr_color(&mut self, color: [u8;4]) {
+    if self.msg_ptr_color.as_rgba() == color { return; }
     self.msg_ptr_color = Color::rgba(color[0], color[1], color[2], color[3]);
+    log::info!("New message pointer color {:?}", self.msg_ptr_color.as_rgba());
+    self.redraw_chat_timer = Some(0.5);
   }
   pub fn update_msg_ptr_color_u32(&mut self, color: u32) {
     self.update_msg_ptr_color(rgba_array_from_u32(color));
   }
   pub fn redraw_bg_texture(&mut self) {
-    if !self.bg_redraw { return; }
-    self.bg_redraw = false;
+    if self.redraw_bg_timer.is_none() || self.redraw_bg_timer.unwrap() > 0.0 { return; }
+    self.redraw_bg_timer = None;
     let cbg_img = create_chat_bg(self.chat_w,self.chat_h,self.bg_rounding,self.bg_color.as_rgba());
     self.bg_tex = Some(gen_rgba_tex(cbg_img));
+  }
+  pub fn rebuild_chats(&mut self) {
+    if self.redraw_chat_timer.is_none() || self.redraw_chat_timer.unwrap() > 0.0 { return; }
+    self.redraw_chat_timer = None;
+    let mut chats = std::mem::take(&mut self.chat_blocks);
+    for msg in &mut chats {
+      msg.block = None;
+      self.build_chat_msg(msg);
+    }
+    self.chat_blocks = chats;
   }
   pub fn update(&mut self, seconds: f32) {
     self.text_blocks.retain(|tblk| tblk.is_alive() );
     self.chat_blocks.retain(|cblk| cblk.is_alive() );
+    if let Some(timer) = self.redraw_bg_timer.as_mut() {
+      *timer -= seconds;
+    }
+    if let Some(timer) = self.redraw_chat_timer.as_mut() {
+      *timer -= seconds;
+    }
     for tblk in self.text_blocks.iter_mut() {
       tblk.update(seconds);
     }
@@ -135,6 +165,7 @@ impl FontStudio {
       current_y += cdata.height() as i32;
     }
     self.redraw_bg_texture();
+    self.rebuild_chats();
   }
   pub fn add_text_block(&mut self, image_width: u32, offset: (i32,i32), metrics: (f32,f32), life: Option<f32>, txt: &str) {
     let mut buffer = self.buffer.borrow_with(&mut self.font_system);
@@ -157,19 +188,6 @@ impl FontStudio {
     let mut msg = ChatDataWithBlock { data: msg, block: None, life: Some(self.chat_life) };
     self.build_chat_msg(&mut msg);
     self.chat_blocks.push_back(msg);
-  }
-  pub fn rebuild_chats(&mut self) {
-    self.chat_blocks.iter_mut().for_each(|cdata| {
-      cdata.block.take();
-    });
-    let mut chat_data: VecDeque<ChatDataWithBlock> = self.chat_blocks.iter().cloned().collect();
-    for msg in chat_data.iter_mut() {
-      self.build_chat_msg(msg);
-    }
-    self.chat_blocks.clear();
-    while chat_data.len() > 0 {
-      self.chat_blocks.push_back(chat_data.pop_front().unwrap());
-    }
   }
   fn build_chat_msg(&mut self, chat_data: &mut ChatDataWithBlock) {
     let mut buffer = self.buffer.borrow_with(&mut self.font_system);
@@ -574,8 +592,11 @@ pub fn rgba_array_from_u32(color: u32) -> [u8;4] {
   let g = (color >>  8) as u8;
   let b = (color >> 16) as u8;
   let a = (color >> 24) as u8;
-  log::debug!("u32 0xAABBGGRR color {:#010X} to u8 array [r: {}, g: {}, b: {}, a: {}]", color, r, g, b, a);
   [r,g,b,a]
+}
+
+pub fn rgba_to_obs_u32(color: [u8;4]) -> u32 {
+  color[0] as u32 | ((color[1] as u32) << 8) | ((color[2] as u32) << 16) | ((color[3] as u32) << 24)
 }
 
 // const EMOTE_PLACEHOLDER: &str = "\u{2003}";
